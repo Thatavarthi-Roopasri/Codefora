@@ -14,9 +14,9 @@ import { ExecutionService } from "./services/executionService.js";
 import { PistonService } from "./services/pistonService.js";
 import { corsOrigin } from "./config/cors.js";
 
-export function createApp({ roomRepository, roomService, profileController }) {
+export function createApp({ roomRepository, roomService, profileController, onRoomCreated }) {
   const app = express();
-  const roomController = createRoomController(roomRepository, roomService, profileController);
+  const roomController = createRoomController(roomRepository, roomService, profileController, onRoomCreated);
   const executionController = createExecutionController(new ExecutionService());
   const aiController = createAiController(new AiService());
   const emotionController = { getEmotions, getEmotionImage, initEmotions };

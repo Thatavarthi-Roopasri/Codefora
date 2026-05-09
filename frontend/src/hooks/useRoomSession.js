@@ -509,7 +509,13 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     if (peers.current.has(targetId)) return peers.current.get(targetId);
 
     const peer = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun4.l.google.com:19302" }
+      ]
     });
 
     peers.current.set(targetId, peer);
@@ -532,15 +538,34 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     };
 
     peer.ontrack = (event) => {
+      console.log(`[WebRTC] Receiving stream from ${targetId}`);
+      
       // Create audio element for the remote stream
       const audio = document.createElement("audio");
       audio.autoplay = true;
       audio.srcObject = event.streams[0];
-      // Ensure it's not muted (browsers might block autoplay if not careful)
+      audio.id = `remote-audio-${targetId}`;
+      
+      // Ensure it's not muted
       audio.muted = false;
+      
+      // Append to hidden host
       audioHost.current?.appendChild(audio);
 
-      console.log(`Receiving audio from ${targetId}`);
+      // Force play and handle autoplay blocks
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          console.warn(`[WebRTC] Autoplay blocked for ${targetId}:`, error);
+          // Browsers sometimes require user interaction before playing audio
+          // We can try to play it again on the next user interaction
+          const playOnInteraction = () => {
+            audio.play().catch(() => {});
+            document.removeEventListener("click", playOnInteraction);
+          };
+          document.addEventListener("click", playOnInteraction);
+        });
+      }
     };
 
     if (initiator) {

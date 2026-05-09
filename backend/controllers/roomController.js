@@ -1,4 +1,4 @@
-export function createRoomController(roomRepository, roomService, profileController) {
+export function createRoomController(roomRepository, roomService, profileController, onRoomCreated) {
   const windowMs = 10 * 60 * 1000;
   const maxRequests = 5;
   const buckets = new Map();
@@ -38,10 +38,11 @@ export function createRoomController(roomRepository, roomService, profileControl
         const room = roomService.createRoom(request.body || {});
         await roomRepository.save(room);
         
-        // Track stats if user is logged in
         if (room.ownerUserId && profileController?.incrementStat) {
           profileController.incrementStat(room.ownerUserId, "roomsJoined");
         }
+
+        if (onRoomCreated) onRoomCreated();
 
         response.status(201).json({ ...roomService.publicRoom(room), hostToken: room.hostToken, inviteCode: room.inviteCode });
       } catch (error) {

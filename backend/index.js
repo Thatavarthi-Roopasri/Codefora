@@ -17,7 +17,9 @@ const roomRepository = new RoomRepository([]);
 await roomRepository.load();
 const roomService = new RoomService(roomRepository);
 const profileController = createProfileController();
-const app = createApp({ roomRepository, roomService, profileController });
+const broadcastRooms = () => io.emit("rooms:update", roomRepository.allPublicSummaries((room) => roomService.publicRoom(room)));
+
+const app = createApp({ roomRepository, roomService, profileController, onRoomCreated: () => broadcastRooms() });
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: allowedOrigins(), methods: ["GET", "POST"] } });
 
@@ -33,7 +35,7 @@ server.listen(port, () => {
   setInterval(() => {
     const deleted = roomRepository.cleanupZombieRooms();
     if (deleted && deleted.length > 0) {
-      io.emit("rooms:update", roomRepository.allPublicSummaries((room) => roomService.publicRoom(room)));
+      broadcastRooms();
     }
   }, 60 * 1000);
 });
