@@ -4,7 +4,9 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const keyPath = path.join(__dirname, "../../firebase-key.json");
+const localKeyPath = path.join(__dirname, "../../firebase-key.json");
+const renderKeyPath = "/etc/secrets/firebase-key.json";
+const keyPath = fs.existsSync(renderKeyPath) ? renderKeyPath : localKeyPath;
 
 export function createFirestore() {
   const projectId = process.env.FIREBASE_PROJECT_ID;
