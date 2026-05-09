@@ -2,152 +2,66 @@ const PISTON_EXECUTE_URL = process.env.PISTON_EXECUTE_URL || "http://localhost:2
 const PISTON_AUTH_TOKEN = String(process.env.PISTON_AUTH_TOKEN || "").trim();
 const PISTON_AUTH_SCHEME = String(process.env.PISTON_AUTH_SCHEME || "Bearer").trim() || "Bearer";
 
-const LANGUAGE_CONFIG = {
-  c: { pistonLanguage: "c", version: "10.2.0", filename: "main.c" },
-  cpp: { pistonLanguage: "cpp", version: "10.2.0", filename: "main.cpp" },
-  java: { pistonLanguage: "java", version: "15.0.2", filename: "Main.java" },
-  javascript: { pistonLanguage: "javascript", version: "18.15.0", filename: "main.js" },
-  typescript: { pistonLanguage: "typescript", version: "5.0.3", filename: "main.ts" },
-  go: { pistonLanguage: "go", version: "1.16.2", filename: "main.go" },
-  rust: { pistonLanguage: "rust", version: "1.68.2", filename: "main.rs" },
-  python: { pistonLanguage: "python", version: "3.10.0", filename: "main.py" }
-};
+const JUDGE0_URL = "https://ce.judge0.com/submissions?base64_encoded=false&wait=true";
 
-const LANGUAGE_ALIASES = {
-  cplusplus: "cpp",
-  "c++": "cpp",
-  js: "javascript",
-  ts: "typescript",
-  py: "python",
-  node: "javascript"
+// Mapping Piston language names to Judge0 language IDs
+const LANGUAGE_MAP = {
+  javascript: 63,
+  typescript: 74,
+  python: 71,
+  java: 62,
+  cpp: 54,
+  c: 50,
+  go: 60,
+  rust: 73
 };
-
-const FALLBACK_URLS = [
-  "https://piston.engineeringman.work/api/v2/execute",
-  "https://emkc.org/api/v2/piston/execute"
-].filter(Boolean);
 
 export class PistonService {
-  async run({ language, version, code, input }) {
-    const resolved = resolveLanguage(language, version);
+  async run({ language, code, input }) {
     const sourceCode = String(code ?? "").trim();
     const stdin = String(input ?? "");
+    const langId = LANGUAGE_MAP[language.toLowerCase()] || 63; // Default to JS
 
     if (!sourceCode) {
       throw createCompilerError("EMPTY_CODE", "Code cannot be empty.", 400);
     }
 
-    let lastError = null;
-    
-    for (const targetUrl of FALLBACK_URLS) {
-      try {
-        console.log(`[Compiler] Trying: ${targetUrl}`);
+    try {
+      console.log(`[Compiler] Sending to Judge0 (ID: ${langId})...`);
 
-        const response = await fetch(targetUrl, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://emkc.org/",
-            "Origin": "https://emkc.org"
-          },
-          body: JSON.stringify({
-            language: resolved.pistonLanguage,
-            version: resolved.version,
-            files: [{ name: resolved.filename, content: sourceCode }],
-            stdin
-          })
-        });
+      const response = await fetch(JUDGE0_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_code: sourceCode,
+          language_id: langId,
+          stdin: stdin
+        })
+      });
 
-        if (response.ok) {
-          const payload = await response.json();
-          return formatExecutionResult(payload, resolved, Date.now());
-        }
-        
-        console.warn(`[Compiler] ${targetUrl} failed with status: ${response.status}`);
-      } catch (error) {
-        lastError = error;
-        console.warn(`[Compiler] ${targetUrl} error: ${error.message}`);
+      if (!response.ok) {
+        throw new Error(`Judge0 failed with status: ${response.status}`);
       }
+
+      const result = await response.json();
+      
+      return {
+        stdout: result.stdout || "",
+        stderr: result.stderr || result.compile_output || "",
+        output: (result.stdout || "") + (result.stderr || result.compile_output || ""),
+        executionTime: Math.floor(parseFloat(result.time || 0) * 1000),
+        status: result.status?.description?.toLowerCase()?.includes("accepted") ? "success" : "error"
+      };
+    } catch (error) {
+      console.error("[Compiler] Judge0 Error:", error.message);
+      throw createCompilerError("COMPILER_UNAVAILABLE", `Compiler is offline. Error: ${error.message}`, 503);
     }
-
-    throw createCompilerError(
-      "COMPILER_UNAVAILABLE",
-      `All compiler services are failing. Last error: ${lastError?.message || "Unknown"}`,
-      503
-    );
   }
 }
 
-function resolveLanguage(language, version) {
-  const normalized = normalizeLanguage(language);
-  const mapped = LANGUAGE_ALIASES[normalized] || normalized;
-  const config = LANGUAGE_CONFIG[mapped];
-
-  if (!config) {
-    throw createCompilerError(
-      "INVALID_LANGUAGE",
-      `Unsupported language: ${String(language || "").trim() || "unknown"}`,
-      400
-    );
-  }
-
-  return {
-    pistonLanguage: config.pistonLanguage,
-    version: String(version || "").trim() || config.version,
-    filename: config.filename
-  };
-}
-
-function normalizeLanguage(language) {
-  return String(language || "").trim().toLowerCase();
-}
-
-function formatExecutionResult(payload, resolved, startedAt) {
-  const compile = payload.compile || {};
-  const run = payload.run || {};
-  const executionTime = Date.now() - startedAt;
-  const compileErrors = normalizeText(compile.stderr || compile.output || payload.compile_output || "");
-  const runtimeErrors = normalizeText(run.stderr || payload.stderr || "");
-  const stdout = normalizeText(run.stdout || payload.stdout || "");
-  const stderr = normalizeText(runtimeErrors || compileErrors || "");
-  const executionOutput = normalizeText([
-    compile.output,
-    run.output,
-    stdout,
-    stderr
-  ].filter(Boolean).join("\n"));
-
-  return {
-    stdout,
-    stderr,
-    compileErrors,
-    runtimeErrors,
-    output: executionOutput,
-    executionOutput,
-    executionTime,
-    language: resolved.pistonLanguage,
-    version: resolved.version,
-    status: inferStatus(compile, run, compileErrors, runtimeErrors)
-  };
-}
-
-function inferStatus(compile, run, compileErrors, runtimeErrors) {
-  if (compileErrors) return "compilation_error";
-  if (runtimeErrors) return "runtime_error";
-  if (run?.code && run.code !== 0) return "runtime_error";
-  if (compile?.code && compile.code !== 0) return "compilation_error";
-  return "completed";
-}
-
-function normalizeText(value) {
-  return String(value || "").trim();
-}
-
-function createCompilerError(code, message, statusCode, details) {
+function createCompilerError(code, message, status) {
   const error = new Error(message);
   error.code = code;
-  error.statusCode = statusCode;
-  if (details) error.details = details;
+  error.status = status;
   return error;
 }
