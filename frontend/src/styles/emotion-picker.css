@@ -1,0 +1,197 @@
+.emotion-picker-container {
+  padding: 16px 4px;
+}
+
+.emotion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 16px;
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* Custom scrollbar for emotions grid */
+.emotion-grid::-webkit-scrollbar {
+  width: 6px;
+}
+.emotion-grid::-webkit-scrollbar-thumb {
+  background: rgba(255, 122, 24, 0.3);
+  border-radius: 10px;
+}
+
+.emotion-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.emotion-item:hover {
+  background: rgba(255, 122, 24, 0.08);
+  border-color: rgba(255, 122, 24, 0.3);
+  transform: translateY(-4px);
+}
+
+.emotion-item.selected {
+  background: rgba(255, 122, 24, 0.15);
+  border-color: var(--primary, #ff7a18);
+  box-shadow: 0 0 20px rgba(255, 122, 24, 0.1);
+}
+
+.emotion-image-wrapper {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease;
+}
+
+.emotion-item:hover .emotion-image-wrapper {
+  transform: scale(1.1);
+}
+
+.emotion-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.emotion-name {
+  color: var(--muted, #a8a8bd);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  text-align: center;
+}
+
+.emotion-item.selected .emotion-name {
+  color: white;
+}
+
+.selected-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  background: var(--primary, #ff7a18);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--primary, #ff7a18);
+}
+
+.emotion-picker-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  color: var(--muted, #a8a8bd);
+}
+
+
+.emotion-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.emotion-modal {
+  width: min(920px, 100%);
+  max-height: min(84vh, 860px);
+  overflow: auto;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.emotion-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.emotion-modal-kicker {
+  margin: 0 0 6px;
+  color: var(--color-text-secondary, #94a3b8);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.emotion-modal-header h2 {
+  margin: 0;
+  color: var(--color-text, #e2e8f0);
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+}
+
+.emotion-modal-close {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border, #1e293b);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--color-text, #e2e8f0);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emotion-modal-close:hover {
+  border-color: var(--color-primary, #fb923c);
+  color: var(--color-primary, #fb923c);
+}
+
+@media (max-width: 768px) {
+  .emotion-modal-overlay {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .emotion-modal {
+    width: 100%;
+    max-height: 90vh;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .emotion-modal-header {
+    align-items: center;
+  }
+
+  .emotion-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 8px;
+  }
+
+  .emotion-item {
+    padding: 8px;
+  }
+
+  .emotion-image {
+    width: 40px;
+    height: 40px;
+  }
+
+  .emotion-name {
+    font-size: 11px;
+  }
+}

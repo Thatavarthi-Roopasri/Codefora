@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="Neon developers around a campfire">
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="fire" cx="50%" cy="65%" r="38%">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="0.45" stop-color="#ff7a18"/>
+      <stop offset="1" stop-color="#020812" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="760" fill="#020812"/>
+  <ellipse cx="600" cy="560" rx="420" ry="150" fill="url(#fire)" opacity=".22"/>
+  <g filter="url(#glow)" fill="none" stroke="#ff7a18" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M520 575c42-67 26-118 80-185 13 54 74 87 54 158 30-34 55-77 58-130 65 74 58 146 15 188-57 55-153 43-207-31z" fill="#ff7a18" opacity=".22"/>
+    <path d="M455 628c94-38 197-39 292 0"/>
+    <path d="M145 487c42 34 96 46 162 34"/>
+    <path d="M206 322c-41 12-68 47-78 100"/>
+    <path d="M196 318c40-15 76-8 108 22"/>
+    <path d="M280 360c23 39 52 63 88 72"/>
+    <path d="M334 445l88 18"/>
+    <path d="M378 442l72 92"/>
+    <path d="M882 512c65 14 121 1 167-39"/>
+    <path d="M920 326c40-16 78-10 114 20"/>
+    <path d="M1000 382c11 54-4 98-44 133"/>
+    <path d="M892 358c-28 38-58 61-91 69"/>
+    <path d="M764 456l84-24"/>
+    <path d="M420 316c34-23 70-25 107-7"/>
+    <path d="M497 341c25 34 52 55 82 61"/>
+    <path d="M678 327c40-18 78-13 113 16"/>
+    <path d="M742 366c-10 45-2 83 24 113"/>
+    <path d="M588 196v157"/>
+    <path d="M588 210c45-27 90-24 135 9v58c-45-27-90-31-135-7"/>
+  </g>
+</svg>

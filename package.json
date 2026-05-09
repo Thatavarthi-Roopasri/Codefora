@@ -1,0 +1,21 @@
+{
+  "name": "codefora",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm --workspace backend run dev\" \"npm --workspace frontend run dev -- --host 0.0.0.0\"",
+    "build": "npm --workspace frontend run build",
+    "frontend": "npm --workspace frontend run dev",
+    "backend": "npm --workspace backend run dev"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1"
+  },
+  "dependencies": {
+    "react-router-dom": "^7.14.2"
+  }
+}

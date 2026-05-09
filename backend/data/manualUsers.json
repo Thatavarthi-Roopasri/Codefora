@@ -1,0 +1,42 @@
+{
+  "manual_testuser": {
+    "profile": {
+      "bio": "hello",
+      "displayName": "Manual User",
+      "emotionId": "happy"
+    },
+    "updatedAt": 1778254235791
+  },
+  "GCE1LQyhGtPYxteSREs6fWjuEWH2": {
+    "profile": {
+      "bio": "perfect",
+      "emotionId": "",
+      "preferredTheme": "dark"
+    },
+    "updatedAt": 1778255821290
+  },
+  "4aY3w2Zz4kh4D15rd58V8xMZrk72": {
+    "profile": {
+      "bio": "",
+      "emotionId": "shocked",
+      "preferredTheme": "dark"
+    },
+    "updatedAt": 1778313973492
+  },
+  "manual_user1": {
+    "account": {
+      "username": "user1",
+      "passwordHash": "ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f",
+      "provider": "manual",
+      "createdAt": 1778272950308,
+      "lastLoginAt": 1778328111496
+    },
+    "profile": {
+      "displayName": "user1",
+      "bio": "fd",
+      "emotionId": "angry",
+      "preferredTheme": "dark"
+    },
+    "updatedAt": 1778328111496
+  }
+}

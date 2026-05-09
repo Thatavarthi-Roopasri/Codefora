@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="Neon coders reaching a mountain flag">
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 1 0 0.35 0 0 0.35 0 0 0 0 0 0 0 0 1 0"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="stroke" x1="0" x2="1">
+      <stop offset="0" stop-color="#ff7a18"/>
+      <stop offset="1" stop-color="#ffb347"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="#020812"/>
+  <path d="M0 760 220 490l95 42 210-310 214 420 88-113L1200 825" fill="none" stroke="#1a2636" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <g filter="url(#glow)" fill="none" stroke="url(#stroke)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 742 270 504l85 32 182-288 198 392 82-95 278 220"/>
+    <path d="M470 256v-98c55-24 116-20 178 10 45 23 95 19 143-8l-56 72c-43 22-85 26-129 8-48-20-91-23-136 16z"/>
+    <path d="M410 478c-58-8-78-48-63-98 12-40 46-73 88-84"/>
+    <path d="M376 376c-26 7-50 7-72 0"/>
+    <path d="M342 476l-50 92 82 15 64-100"/>
+    <path d="M445 305c30 42 66 65 111 70"/>
+    <circle cx="585" cy="365" r="22"/>
+    <path d="M828 526c-36-8-58-36-56-75 2-44 33-81 78-100"/>
+    <path d="M776 449c-27-2-51-16-70-41"/>
+    <path d="M772 552l-11 101 89 13 8-106"/>
+    <path d="M869 359c25 46 57 70 98 73"/>
+    <circle cx="996" cy="432" r="20"/>
+  </g>
+</svg>
