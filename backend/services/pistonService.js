@@ -38,6 +38,9 @@ export class PistonService {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const targetUrl = PISTON_EXECUTE_URL.trim();
+      console.log(`[Piston] Attempting execution at: ${targetUrl}`);
+
       const headers = { 
         "Content-Type": "application/json",
         "User-Agent": "Codefora-Compiler-Service"
@@ -46,7 +49,7 @@ export class PistonService {
         headers.Authorization = `${PISTON_AUTH_SCHEME} ${PISTON_AUTH_TOKEN}`.trim();
       }
 
-      const response = await fetch(PISTON_EXECUTE_URL, {
+      const response = await fetch(targetUrl, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -74,12 +77,14 @@ export class PistonService {
 
       return formatExecutionResult(payload, resolved, startedAt);
     } catch (error) {
+      console.error(`[Piston] Execution Error: ${error.message}`, error);
+      
       if (error?.name === "AbortError" || error?.code === "UND_ERR_CONNECT_TIMEOUT") {
         throw createCompilerError("TIMEOUT", "Execution timed out.", 408);
       }
 
       if (error?.cause?.code === "ECONNREFUSED" || error?.code === "ECONNREFUSED" || error?.message?.includes("fetch failed")) {
-        throw createCompilerError("PISTON_UNAVAILABLE", "Local compiler service is offline or unreachable.", 503);
+        throw createCompilerError("PISTON_UNAVAILABLE", `Local compiler service is offline or unreachable. Error: ${error.message}`, 503);
       }
 
       if (error?.code === "EMPTY_CODE" || error?.code === "INVALID_LANGUAGE") {
