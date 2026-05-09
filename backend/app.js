@@ -31,8 +31,26 @@ export function createApp({ roomRepository, roomService, profileController }) {
     response.json({
       name: "Codefora API",
       status: "running",
-      routes: ["/api/health", "/api/rooms", "/api/run", "/api/compiler/run", "/api/ai", "/api/emotions", "/api/admin"]
+      routes: ["/api/health", "/api/rooms", "/api/run", "/api/compiler/run", "/api/ai", "/api/emotions", "/api/admin", "/api/test-network"]
     });
+  });
+
+  // Diagnostic route for network testing
+  app.get("/api/test-network", async (req, res) => {
+    try {
+      const response = await fetch("https://www.google.com", { method: "HEAD" });
+      res.json({
+        success: response.ok,
+        status: response.status,
+        message: "Server can reach Google.com"
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Server cannot reach external internet",
+        error: error.message
+      });
+    }
   });
 
   app.use("/api", createApiRoutes({ 
