@@ -24,9 +24,8 @@ const LANGUAGE_ALIASES = {
 
 const FALLBACK_URLS = [
   "https://emkc.org/api/v2/piston/execute",
-  process.env.PISTON_EXECUTE_URL,
   "https://piston.engineeringman.work/api/v2/execute"
-].filter(Boolean).map(url => url.trim());
+].filter(Boolean);
 
 export class PistonService {
   async run({ language, version, code, input }) {
@@ -40,72 +39,36 @@ export class PistonService {
 
     let lastError = null;
     
-    // Try each fallback URL until one works
     for (const targetUrl of FALLBACK_URLS) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
       try {
-        console.log(`[Piston] Attempting execution at: ${targetUrl}`);
-
-        const headers = { 
-          "Content-Type": "application/json",
-          "User-Agent": "Codefora-Compiler-Service"
-        };
-        
-        // Only send token if it's the user's custom URL and we HAVE a token
-        const isCustomUrl = targetUrl === process.env.PISTON_EXECUTE_URL;
-        const isPublicUrl = targetUrl.includes("emkc.org") || targetUrl.includes("engineeringman.work");
-        
-        if (isCustomUrl && !isPublicUrl && PISTON_AUTH_TOKEN && PISTON_AUTH_TOKEN.trim().length > 0) {
-          headers.Authorization = `${PISTON_AUTH_SCHEME} ${PISTON_AUTH_TOKEN}`.trim();
-        }
+        console.log(`[Compiler] Trying: ${targetUrl}`);
 
         const response = await fetch(targetUrl, {
           method: "POST",
-          headers,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             language: resolved.pistonLanguage,
             version: resolved.version,
             files: [{ name: resolved.filename, content: sourceCode }],
-            stdin,
-            compile_timeout: 10000,
-            run_timeout: 10000
-          }),
-          signal: controller.signal
+            stdin
+          })
         });
 
-        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          const payload = await response.json();
+          return formatExecutionResult(payload, resolved, Date.now());
+        }
         
-        if (response.status === 401 || response.status === 403) {
-          console.warn(`[Piston] Auth error at ${targetUrl}, trying next fallback...`);
-          continue;
-        }
-
-        if (!response.ok) {
-          console.warn(`[Piston] Server error ${response.status} at ${targetUrl}, trying next fallback...`);
-          continue;
-        }
-
-        clearTimeout(timeoutId);
-        return formatExecutionResult(payload, resolved, Date.now());
+        console.warn(`[Compiler] ${targetUrl} failed with status: ${response.status}`);
       } catch (error) {
-        clearTimeout(timeoutId);
         lastError = error;
-        console.error(`[Piston] Connection failed at ${targetUrl}:`, {
-          message: error.message,
-          code: error.code,
-          cause: error.cause,
-          name: error.name
-        });
-        continue;
+        console.warn(`[Compiler] ${targetUrl} error: ${error.message}`);
       }
     }
 
-    // If we get here, all fallbacks failed
     throw createCompilerError(
-      "PISTON_UNAVAILABLE",
-      `All compiler services are currently unreachable. Last error: ${lastError?.message || "Unknown"}`,
+      "COMPILER_UNAVAILABLE",
+      `All compiler services are failing. Last error: ${lastError?.message || "Unknown"}`,
       503
     );
   }
