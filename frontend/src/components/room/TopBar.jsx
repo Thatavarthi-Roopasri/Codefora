@@ -5,8 +5,8 @@ export function TopBar({ room, users, files, runFile, setRunFile, micOn, permiss
   return (
     <header className="topbar">
       <div className="room-heading">
-        <button className="icon-button orange" onClick={onLeaveRequest} aria-label="Back to rooms">
-          <Code2 size={19} />
+        <button className="icon-button orange" onClick={onLeaveRequest} aria-label="Back to rooms" style={{ padding: 0, overflow: 'hidden' }}>
+          <img src="/codefora.png" alt="Codefora" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </button>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -47,6 +47,7 @@ export function TopBar({ room, users, files, runFile, setRunFile, micOn, permiss
           className={`button compact ${micOn ? "primary mic-live" : "secondary"}`}
           disabled={!permissions.canSpeak}
           onClick={onMic}
+          style={micOn ? { color: "#000", fontWeight: "700" } : {}}
         >
           {micOn ? <Mic size={16} /> : <MicOff size={16} />}
           <span>{micOn ? "Mic Live" : "Mic Off"}</span>
