@@ -47,10 +47,10 @@ export function TopBar({ room, users, files, runFile, setRunFile, micOn, permiss
           className={`button compact ${micOn ? "primary mic-live" : "secondary"}`}
           disabled={!permissions.canSpeak}
           onClick={onMic}
-          style={micOn ? { color: "#000", fontWeight: "700" } : {}}
+          style={micOn ? { background: "#f97316", border: "none" } : {}}
         >
-          {micOn ? <Mic size={16} /> : <MicOff size={16} />}
-          <span>{micOn ? "Mic Live" : "Mic Off"}</span>
+          {micOn ? <Mic size={16} style={{ color: "#000" }} /> : <MicOff size={16} />}
+          <span style={micOn ? { color: "#000", fontWeight: "800" } : {}}>{micOn ? "Mic Live" : "Mic Off"}</span>
         </button>
 
         <button className="button compact secondary" onClick={onLeaveRequest}>
