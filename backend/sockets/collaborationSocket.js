@@ -17,10 +17,14 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     });
 
     const handleJoin = async ({ roomId, username, inviteCode, hostToken, userId, sessionId, force, profile, emotionId }) => {
-      console.log(`[Socket] Join request from ${username} (ID: ${userId}) - Force: ${force}`);
-      const requestUserId = (userId && String(userId).trim()) || null;
+      // 1. Strict User ID validation
+      const rawUserId = String(userId || "").trim();
+      const requestUserId = (rawUserId && rawUserId !== "null" && rawUserId !== "undefined") ? rawUserId : null;
       const requestSessionId = (sessionId && String(sessionId).trim()) || null;
       const cleanInviteCode = normalizeInvite(inviteCode);
+      
+      console.log(`[Socket] Join request: User=${username}, ID=${requestUserId}, Force=${force}`);
+
       let room = roomRepository.findById(decodeURIComponent(String(roomId || "")).trim());
       
       if (!room && cleanInviteCode) {
