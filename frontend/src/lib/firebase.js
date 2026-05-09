@@ -1,32 +1,32 @@
-// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDjlHLvZxtCjahFcxPYBVq5g82RCWcjfbo",
-  authDomain: "codefora-9289d.firebaseapp.com",
-  projectId: "codefora-9289d",
-  storageBucket: "codefora-9289d.firebasestorage.app",
-  messagingSenderId: "425485558425",
-  appId: "1:425485558425:web:dbd49e67178651a6298e08",
-  measurementId: "G-1VDXYCB0B4"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDjlHLvZxtCjahFcxPYBVq5g82RCWcjfbo",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "codefora-9289d.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "codefora-9289d",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "codefora-9289d.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "425485558425",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:425485558425:web:dbd49e67178651a6298e08",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-1VDXYCB0B4"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+const analytics = typeof window !== "undefined" ? getAnalytics(app) : null;
 
 // Initialize Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore Database (disabled for debugging)
-export const db = null;
+// Initialize Firestore Database
+export const db = getFirestore(app);
 
-// Initialize Storage (disabled for debugging)
-export const storage = null;
+// Initialize Storage
+export const storage = getStorage(app);
 
 // Initialize Google Auth Provider
 export const googleProvider = new GoogleAuthProvider();
