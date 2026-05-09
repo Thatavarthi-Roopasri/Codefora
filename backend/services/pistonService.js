@@ -23,8 +23,8 @@ const LANGUAGE_ALIASES = {
 };
 
 const FALLBACK_URLS = [
-  "https://emkc.org/api/v2/piston/execute",
-  "https://piston.engineeringman.work/api/v2/execute"
+  "https://piston.engineeringman.work/api/v2/execute",
+  "https://emkc.org/api/v2/piston/execute"
 ].filter(Boolean);
 
 export class PistonService {
@@ -45,7 +45,12 @@ export class PistonService {
 
         const response = await fetch(targetUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://emkc.org/",
+            "Origin": "https://emkc.org"
+          },
           body: JSON.stringify({
             language: resolved.pistonLanguage,
             version: resolved.version,
