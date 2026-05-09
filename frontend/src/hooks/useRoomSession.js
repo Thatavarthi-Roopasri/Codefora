@@ -506,7 +506,13 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   }
 
   async function createPeer(targetId, initiator) {
-    if (peers.current.has(targetId)) return peers.current.get(targetId);
+    if (peers.current.has(targetId)) {
+      const existing = peers.current.get(targetId);
+      if (existing.connectionState !== "failed" && existing.connectionState !== "closed") {
+        return existing;
+      }
+      peers.current.delete(targetId);
+    }
 
     const peer = new RTCPeerConnection({
       iceServers: [
@@ -520,7 +526,19 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
     peers.current.set(targetId, peer);
 
-    // Only add local tracks if we have a stream
+    // Watch for connection failures and cleanup
+    peer.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Connection to ${targetId}: ${peer.connectionState}`);
+      if (peer.connectionState === "failed") {
+        peers.current.delete(targetId);
+        // If we are the ones speaking, try to recreate the connection once
+        if (micOn && localStream.current) {
+          setTimeout(() => createPeer(targetId, true), 1000);
+        }
+      }
+    };
+
+    // Add local tracks
     if (localStream.current) {
       localStream.current.getTracks().forEach((track) => {
         peer.addTrack(track, localStream.current);
@@ -540,25 +558,20 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     peer.ontrack = (event) => {
       console.log(`[WebRTC] Receiving stream from ${targetId}`);
       
-      // Create audio element for the remote stream
+      // Remove any existing audio for this user first
+      const existingAudio = document.getElementById(`remote-audio-${targetId}`);
+      if (existingAudio) existingAudio.remove();
+
       const audio = document.createElement("audio");
       audio.autoplay = true;
       audio.srcObject = event.streams[0];
       audio.id = `remote-audio-${targetId}`;
-      
-      // Ensure it's not muted
       audio.muted = false;
-      
-      // Append to hidden host
       audioHost.current?.appendChild(audio);
 
-      // Force play and handle autoplay blocks
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.warn(`[WebRTC] Autoplay blocked for ${targetId}:`, error);
-          // Browsers sometimes require user interaction before playing audio
-          // We can try to play it again on the next user interaction
+        playPromise.catch(() => {
           const playOnInteraction = () => {
             audio.play().catch(() => {});
             document.removeEventListener("click", playOnInteraction);
@@ -569,45 +582,53 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     };
 
     if (initiator) {
-      const offer = await peer.createOffer({
-        offerToReceiveAudio: true
-      });
-      await peer.setLocalDescription(offer);
-      socket.emit("voice:signal", {
-        roomId: activeRoomId,
-        target: targetId,
-        signal: { description: peer.localDescription }
-      });
+      try {
+        const offer = await peer.createOffer({ offerToReceiveAudio: true });
+        await peer.setLocalDescription(offer);
+        socket.emit("voice:signal", {
+          roomId: activeRoomId,
+          target: targetId,
+          signal: { description: peer.localDescription }
+        });
+      } catch (e) {
+        console.error(`[WebRTC] Offer failed for ${targetId}:`, e);
+      }
     }
 
     return peer;
   }
 
   async function handleVoiceSignal({ from, signal }) {
-    // We should be able to receive even if we aren't speaking
+    // If we aren't even a member/host, we can't listen
     if (!canSpeakRef.current) return;
 
-    const peer = await createPeer(from, false);
+    try {
+      const peer = await createPeer(from, false);
 
-    if (signal.description) {
-      await peer.setRemoteDescription(signal.description);
-      if (signal.description.type === "offer") {
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        socket.emit("voice:signal", {
-          roomId: activeRoomId,
-          target: from,
-          signal: { description: peer.localDescription }
-        });
-      }
-    }
+      if (signal.description) {
+        // Handle potential signaling race conditions
+        if (signal.description.type === "offer" && peer.signalingState !== "stable") {
+          console.warn("[WebRTC] Signaling collision detected, ignoring stale offer");
+          return;
+        }
 
-    if (signal.candidate) {
-      try {
-        await peer.addIceCandidate(signal.candidate);
-      } catch (e) {
-        console.warn("Failed to add ice candidate", e);
+        await peer.setRemoteDescription(new RTCSessionDescription(signal.description));
+        if (signal.description.type === "offer") {
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          socket.emit("voice:signal", {
+            roomId: activeRoomId,
+            target: from,
+            signal: { description: peer.localDescription }
+          });
+        }
       }
+
+      if (signal.candidate && peer.remoteDescription) {
+        await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      }
+    } catch (e) {
+      console.warn("[WebRTC] Signal handling error:", e);
     }
   }
 
