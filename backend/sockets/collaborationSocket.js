@@ -41,29 +41,25 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         return;
       }
 
-      // 1. Check for existing active session for this specific User ID
+      // 2. Check for existing active session
       if (requestUserId && userIdToRoomId.has(requestUserId)) {
         const existingRoomId = userIdToRoomId.get(requestUserId);
         const isDifferentRoom = existingRoomId !== room.id;
         
-        // If not forcing, and we have an active session elsewhere, block
         if (!force && isDifferentRoom) {
           socket.emit("room:error", "You are already active in another room.");
           socket.emit("room:join:failed", { reason: "already_in_room", roomId, existingRoomId });
           return;
         }
 
-        // If forcing OR it's the same room (refresh), clean up the OLD socket first
         const oldRoom = roomRepository.findById(existingRoomId);
         if (oldRoom) {
           const oldUser = oldRoom.users.find(u => u.userId === requestUserId && u.socketId !== socket.id);
           if (oldUser) {
-            console.log(`[Session Takeover] Moving user ${requestUserId} to new socket/room`);
             const oldSocket = io.sockets.sockets.get(oldUser.socketId);
             if (oldSocket) {
               oldSocket.leave(existingRoomId);
               oldSocket.emit("room:error", "You have joined from another tab/location.");
-              // We don't necessarily disconnect them, just remove them from the room state
             }
             oldRoom.users = oldRoom.users.filter(u => u.socketId !== oldUser.socketId);
             io.to(existingRoomId).emit("presence:update", oldRoom.users);
@@ -75,7 +71,10 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
 
       const cleanName = username?.trim() || `User-${socket.id.slice(0, 4)}`;
       const isOwner = requestUserId && room.ownerUserId && requestUserId === room.ownerUserId;
-      const isHost = hostToken === room.hostToken || isOwner || (room.users.length === 0 && cleanName === room.hostName);
+      const isAuthorizedHost = hostToken === room.hostToken || isOwner;
+      
+      // A user is a Host if they are authorized OR if they were already the host before refresh
+      const isHost = isAuthorizedHost || (room.users.length === 0 && cleanName === room.hostName);
       const role = isHost ? "Host" : room.visibility === "public" ? "Viewer" : "Member";
       
       const user = {
@@ -98,7 +97,17 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       socketUsers.set(socket.id, room.id);
       if (requestUserId) userIdToRoomId.set(requestUserId, room.id);
 
-      // Final cleanup to ensure no duplicate socket IDs for the SAME user in THIS room
+      // If the returning user is a REAL host, demote any "temporary" host
+      if (isAuthorizedHost) {
+        room.users.forEach(u => {
+          if (u.role === "Host" && u.userId !== requestUserId) {
+            u.role = "Member";
+            u.color = "#8BE9FD";
+          }
+        });
+      }
+
+      // Final cleanup
       room.users = room.users.filter(u => u.socketId !== socket.id && u.userId !== requestUserId);
 
       room.users.push(user);
@@ -272,20 +281,33 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       const room = roomId && roomRepository.findById(roomId);
       socketUsers.delete(socket.id);
       if (!room) return;
+      
       const disconnectingUser = room.users.find((user) => user.socketId === socket.id);
-      // Remove authenticated user from multi-room tracking
       if (disconnectingUser && disconnectingUser.userId) {
         userIdToRoomId.delete(disconnectingUser.userId);
       }
       
       room.users = room.users.filter((user) => user.socketId !== socket.id);
       
+      // GRACE PERIOD: Wait 3 seconds before transferring host role
+      // This prevents losing the host role during a quick page refresh
       if (disconnectingUser?.role === "Host" && room.users.length > 0) {
-        const oldest = [...room.users].sort((a,b) => a.joinedAt - b.joinedAt)[0];
-        oldest.role = "Host";
-        oldest.color = "#FF7A18";
-        room.hostName = oldest.name;
-        console.log(`[Host Disconnect] Transferred host of ${roomId} to ${oldest.name}`);
+        setTimeout(() => {
+          const freshRoom = roomRepository.findById(roomId);
+          if (!freshRoom) return;
+          
+          // Check if the host has already joined back
+          const hostIsBack = freshRoom.users.some(u => u.role === "Host");
+          if (!hostIsBack && freshRoom.users.length > 0) {
+            const oldest = [...freshRoom.users].sort((a,b) => a.joinedAt - b.joinedAt)[0];
+            oldest.role = "Host";
+            oldest.color = "#FF7A18";
+            freshRoom.hostName = oldest.name;
+            console.log(`[Host Disconnect] Transferred host of ${roomId} to ${oldest.name} after grace period`);
+            io.to(roomId).emit("presence:update", freshRoom.users);
+            broadcastRooms();
+          }
+        }, 3000);
       }
       
       socket.to(room.id).emit("presence:update", room.users);
