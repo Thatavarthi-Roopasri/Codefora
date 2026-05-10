@@ -4,7 +4,7 @@ import { logoutUser, signInWithGoogle } from "../lib/firebase";
 import { saveUsername } from "../lib/navigation";
 import { api } from "../api/client";
 import { BrandButton } from "../components/BrandButton";
-import homevid from "../../assets/homevid.mp4";
+import lvssbg from "../../assets/lvssbg.mp4";
 
 export default function SignInPage() {
   const navigate = useNavigate();
@@ -102,7 +102,7 @@ export default function SignInPage() {
           opacity: 1
         }}
       >
-        <source src={homevid} type="video/mp4" />
+        <source src={lvssbg} type="video/mp4" />
       </video>
 
       <div className="home-main-layout animate-fade-in-up" style={{ position: 'relative', zIndex: 2 }}>
