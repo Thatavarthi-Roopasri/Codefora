@@ -52,7 +52,9 @@ export default function EmotionPicker({ selectedEmotion, onSelectEmotion, catego
                 loading="lazy"
               />
             </div>
-            <span className="emotion-name">{emotion.name}</span>
+            {category !== 'sider' && category !== 'loop' && (
+              <span className="emotion-name">{emotion.name}</span>
+            )}
             {selectedEmotion === emotion.id && <div className="selected-badge" />}
           </button>
         ))}
