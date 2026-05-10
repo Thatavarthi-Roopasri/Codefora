@@ -16,6 +16,7 @@ export function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [selectedEmotion, setSelectedEmotion] = useState("");
+  const [selectedCommunity, setSelectedCommunity] = useState("sider");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
@@ -38,6 +39,7 @@ export function ProfilePage() {
       setDisplayName(profile.displayName || user.displayName || "");
       setBio(profile.bio || "Building consistency one problem at a time.");
       setSelectedEmotion(profile.emotionId || "");
+      setSelectedCommunity(profile.community || "sider");
 
       setLoadingProfile(false);
     }
@@ -67,6 +69,7 @@ export function ProfilePage() {
       displayName: displayName.trim(),
       bio: bio.trim(),
       emotionId: selectedEmotion,
+      community: selectedCommunity,
       preferredTheme: "dark"
     };
 
@@ -236,6 +239,26 @@ export function ProfilePage() {
 
               <div className="settings-col">
                 <div className="input-group">
+                  <label>Community</label>
+                  <div className="community-selector-row">
+                    <button 
+                      type="button"
+                      className={`community-btn sider ${selectedCommunity === 'sider' ? 'active' : ''}`}
+                      onClick={() => setSelectedCommunity('sider')}
+                    >
+                      Sider
+                    </button>
+                    <button 
+                      type="button"
+                      className={`community-btn loop ${selectedCommunity === 'loop' ? 'active' : ''}`}
+                      onClick={() => setSelectedCommunity('loop')}
+                    >
+                      Loop
+                    </button>
+                  </div>
+                </div>
+
+                <div className="input-group">
                   <label>Avatar / Emotion</label>
                   <div className="avatar-setting-row">
                     <div className="avatar-preview-small">
@@ -369,7 +392,11 @@ export function ProfilePage() {
                 <X size={16} />
               </button>
             </div>
-            <EmotionPicker selectedEmotion={selectedEmotion} onSelectEmotion={setSelectedEmotion} />
+            <EmotionPicker 
+              selectedEmotion={selectedEmotion} 
+              onSelectEmotion={setSelectedEmotion} 
+              category={selectedCommunity}
+            />
             <div className="profile-modal-footer">
               <button type="button" className="button primary" onClick={() => setShowEmotionModal(false)}>
                 Done
@@ -378,6 +405,47 @@ export function ProfilePage() {
           </div>
         </div>
       )}
+      <style>{`
+        .community-selector-row {
+          display: flex;
+          gap: 12px;
+          margin-top: 8px;
+        }
+        .community-btn {
+          padding: 10px 24px;
+          border-radius: 8px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          border: 2px solid transparent;
+          flex: 1;
+        }
+        .community-btn.sider {
+          background: rgba(255, 122, 24, 0.1);
+          color: #FF7A18;
+          border-color: rgba(255, 122, 24, 0.3);
+        }
+        .community-btn.sider.active {
+          background: #FF7A18;
+          color: white;
+          box-shadow: 0 0 15px rgba(255, 122, 24, 0.5);
+          animation: orange-glow 2s infinite alternate;
+        }
+        .community-btn.loop {
+          background: rgba(0, 229, 255, 0.1);
+          color: #00E5FF;
+          border-color: rgba(0, 229, 255, 0.3);
+        }
+        .community-btn.loop.active {
+          background: #00E5FF;
+          color: #000;
+          box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+        }
+        @keyframes orange-glow {
+          from { box-shadow: 0 0 5px rgba(255, 122, 24, 0.4); }
+          to { box-shadow: 0 0 20px rgba(255, 122, 24, 0.8); }
+        }
+      `}</style>
     </main>
   );
 }

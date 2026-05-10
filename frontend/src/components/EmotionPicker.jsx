@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { API_URL } from '../config';
 import '../styles/emotion-picker.css';
 
-export default function EmotionPicker({ selectedEmotion, onSelectEmotion }) {
+export default function EmotionPicker({ selectedEmotion, onSelectEmotion, category = 'general' }) {
   const [emotions, setEmotions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchEmotions = async () => {
+      setLoading(true);
       try {
-        const response = await fetch(`${API_URL}/api/emotions`);
+        const response = await fetch(`${API_URL}/api/emotions?category=${category}`);
         if (!response.ok) throw new Error('Failed to fetch emotions');
         const data = await response.json();
         setEmotions(data);
@@ -21,7 +22,7 @@ export default function EmotionPicker({ selectedEmotion, onSelectEmotion }) {
     };
 
     fetchEmotions();
-  }, []);
+  }, [category]);
 
   if (loading) {
     return (

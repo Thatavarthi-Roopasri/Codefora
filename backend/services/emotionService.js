@@ -8,19 +8,35 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Backend is at ...Codefora-main\Codefora-main\backend
 // So we go up 3 levels: services -> backend -> Codefora-main -> parent directory
 const emotionsDir = path.join(__dirname, '../../frontend/assets/codefora_emotions');
+const sidersDir = path.join(__dirname, '../../frontend/assets/emotions_siders');
+const loopsDir = path.join(__dirname, '../../frontend/assets/emotions_loops');
 
 // Get all emotion files
-export const getAllEmotions = async () => {
+export const getAllEmotions = async (category = 'general') => {
   try {
-    const files = fs.readdirSync(emotionsDir);
+    let targetDir = emotionsDir;
+    let prefix = '';
+
+    if (category === 'sider') {
+      targetDir = sidersDir;
+      prefix = 'sider:';
+    } else if (category === 'loop') {
+      targetDir = loopsDir;
+      prefix = 'loop:';
+    }
+
+    if (!fs.existsSync(targetDir)) return [];
+
+    const files = fs.readdirSync(targetDir);
     const emotions = files
-      .filter((file) => file.endsWith('.png'))
+      .filter((file) => file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg'))
       .map((file) => {
-        const name = file.replace('.png', '');
+        const id = prefix + file;
+        const name = file.replace(/\.(png|jpg|jpeg)$/, '').replace(/_/g, ' ');
         return {
-          id: name,
-          name: name.replace(/_/g, ' '),
-          emoji: name,
+          id,
+          name: name.startsWith('icon ') ? name : name.charAt(0).toUpperCase() + name.slice(1),
+          category,
           fileName: file,
         };
       });
@@ -33,8 +49,25 @@ export const getAllEmotions = async () => {
 
 // Get emotion file stream
 export const getEmotionFile = (emotionId) => {
-  const filePath = path.join(emotionsDir, `${emotionId}.png`);
+  let targetDir = emotionsDir;
+  let fileName = emotionId;
+
+  if (emotionId.startsWith('sider:')) {
+    targetDir = sidersDir;
+    fileName = emotionId.replace('sider:', '');
+  } else if (emotionId.startsWith('loop:')) {
+    targetDir = loopsDir;
+    fileName = emotionId.replace('loop:', '');
+  } else {
+    // Legacy support for unprefixed IDs
+    fileName = emotionId.includes('.') ? emotionId : `${emotionId}.png`;
+  }
+
+  const filePath = path.join(targetDir, fileName);
   if (!fs.existsSync(filePath)) {
+    // If not found in specific category, try general as fallback
+    const fallbackPath = path.join(emotionsDir, fileName.includes('.') ? fileName : `${fileName}.png`);
+    if (fs.existsSync(fallbackPath)) return fs.createReadStream(fallbackPath);
     return null;
   }
   return fs.createReadStream(filePath);
