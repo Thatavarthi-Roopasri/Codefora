@@ -251,7 +251,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("voice:signal", ({ roomId, target, signal }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || !user) return;
       socket.to(target).emit("voice:signal", { from: socket.id, signal, user: user.name });
     });
 
