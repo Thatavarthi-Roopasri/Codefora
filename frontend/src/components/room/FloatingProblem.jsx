@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, GripHorizontal, BookOpen } from 'lucide-react';
 
-export function FloatingProblem({ problem, onClose }) {
+export function FloatingProblem({ problem, onClose, onSolve }) {
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0 });
@@ -107,6 +107,34 @@ export function FloatingProblem({ problem, onClose }) {
               </div>
             ))}
           </section>
+        </div>
+
+        <div className="floating-footer" style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--line)' }}>
+          <button 
+            className="button primary full-width" 
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => {
+              // Simulate check then show feedback
+              if (window.confirm("Submit your current code for this problem?")) {
+                const btn = document.activeElement;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = "Checking...";
+                btn.disabled = true;
+                setTimeout(() => {
+                  btn.innerHTML = "Accepted!";
+                  btn.style.background = "#10b981";
+                  setTimeout(() => {
+                    onSolve?.();
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    btn.style.background = "";
+                  }, 1000);
+                }, 1500);
+              }
+            }}
+          >
+            Submit Solution
+          </button>
         </div>
       </div>
     </div>

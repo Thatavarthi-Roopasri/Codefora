@@ -40,6 +40,7 @@ export function Navbar() {
         <NavLink to="/home" end style={linkStyle}>Home</NavLink>
         <NavLink to="/rooms" style={linkStyle}>Rooms</NavLink>
         <NavLink to="/problems" style={linkStyle}>Problems</NavLink>
+        <NavLink to="/feedback" style={linkStyle}>Feedback</NavLink>
         {isAdmin && <NavLink to="/admin" style={linkStyle}>Dashboard</NavLink>}
         <NavLink to="/profile" style={linkStyle}>Profile</NavLink>
       </nav>

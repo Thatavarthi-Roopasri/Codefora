@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createCompilerRoutes } from "./compiler.js";
 import { adminAuth } from "../middleware/adminAuth.js";
 
-export function createApiRoutes({ roomController, executionController, aiController, emotionController, profileController, accountController, compilerController, adminController }) {
+export function createApiRoutes({ roomController, executionController, aiController, emotionController, profileController, accountController, compilerController, adminController, feedbackController }) {
   const router = Router();
 
   router.get("/health", (_request, response) => response.json({ ok: true }));
@@ -29,6 +29,10 @@ export function createApiRoutes({ roomController, executionController, aiControl
   router.get("/emotions", emotionController.getEmotions);
   router.get("/emotions/:emotionId/image", emotionController.getEmotionImage);
   router.post("/emotions/init", emotionController.initEmotions);
+
+  // Feedback routes
+  router.post("/feedback", feedbackController.submit);
+  router.get("/admin/feedback", adminAuth, feedbackController.getAll);
 
   // Admin routes (Protected)
   if (adminController) {

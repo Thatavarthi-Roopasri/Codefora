@@ -13,6 +13,7 @@ import { FooterBar } from "../components/room/FooterBar";
 import { problems } from "../data/problems";
 import { getUsername, saveUsername } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
+import FeedbackModal from "../components/FeedbackModal";
 
 export function RoomPage() {
   const { roomId } = useParams();
@@ -26,6 +27,8 @@ export function RoomPage() {
   const [activeCommsTab, setActiveCommsTab] = useState("chat");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showFloatingProblem, setShowFloatingProblem] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackType, setFeedbackType] = useState('general');
 
   const isBypassingBlocker = useRef(false);
 
@@ -78,6 +81,12 @@ export function RoomPage() {
 
   const confirmLeave = () => {
     setShowLeavePrompt(false);
+    setFeedbackType('room_leave');
+    setShowFeedbackModal(true);
+  };
+
+  const handleFeedbackClose = () => {
+    setShowFeedbackModal(false);
     if (permissions.isHost) {
       actions.endRoom(true); 
     }
@@ -255,6 +264,10 @@ export function RoomPage() {
           <FloatingProblem 
             problem={activeProblem} 
             onClose={() => setShowFloatingProblem(false)} 
+            onSolve={() => {
+              setFeedbackType('problem_solve');
+              setShowFeedbackModal(true);
+            }}
           />
         )}
 
@@ -363,6 +376,12 @@ export function RoomPage() {
           </div>
         )}
       </div>
+      <FeedbackModal 
+        isOpen={showFeedbackModal} 
+        onClose={handleFeedbackClose}
+        username={joinName}
+        type={feedbackType}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { RoomsPage } from "./pages/RoomsPage";
 import { RoomPage } from "./pages/RoomPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import FeedbackPage from "./pages/FeedbackPage";
 import Loader from "./components/Loader";
 import { useLocation } from "react-router-dom";
 
@@ -52,6 +53,7 @@ const router = createBrowserRouter([
       { path: "problems", element: <ProblemsPage /> },
       { path: "admin", element: <AdminDashboardPage /> },
       { path: "profile", element: <ProfilePage /> },
+      { path: "feedback", element: <FeedbackPage /> },
       { path: "room/:roomId", element: <RoomPage /> },
       { path: "code/:roomId", element: <RoomPage /> },
       { path: "code/private/:roomId", element: <RoomPage /> }

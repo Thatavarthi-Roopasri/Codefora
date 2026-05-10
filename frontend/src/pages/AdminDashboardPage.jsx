@@ -23,6 +23,7 @@ export default function AdminDashboardPage() {
   const [rooms, setRooms] = useState([]);
   const [problemList, setProblemList] = useState([]);
   const [users, setUsers] = useState([]);
+  const [feedbackList, setFeedbackList] = useState([]);
   const [activityLog, setActivityLog] = useState([
     { icon: <Activity size={16} />, class: 'updated', text: 'System initialized and connected to server.', time: 'just now' }
   ]);
@@ -36,16 +37,18 @@ export default function AdminDashboardPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [s, r, p, u] = await Promise.all([
+      const [s, r, p, u, f] = await Promise.all([
         api.request("/api/admin/stats"),
         api.request("/api/admin/rooms"),
         api.request("/api/admin/problems"),
-        api.request("/api/admin/users")
+        api.request("/api/admin/users"),
+        api.request("/api/admin/feedback")
       ]);
       setStatsData(s);
       setRooms(r);
       setProblemList(p);
       setUsers(u);
+      setFeedbackList(f || []);
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
     } finally {
@@ -148,6 +151,9 @@ export default function AdminDashboardPage() {
             </button>
             <button className={`admin-nav-item ${activeTab === 'Reports' ? 'active' : ''}`} onClick={() => setActiveTab('Reports')}>
               <ShieldAlert size={18} /> Reports & Abuse
+            </button>
+            <button className={`admin-nav-item ${activeTab === 'Feedback' ? 'active' : ''}`} onClick={() => setActiveTab('Feedback')}>
+              <MessageSquare size={18} /> User Feedback
             </button>
           </div>
 
@@ -366,6 +372,61 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Feedback Panel */}
+          {activeTab === 'Feedback' && (
+            <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
+              <div className="admin-panel-header">
+                <h2>User Feedback & Ratings</h2>
+                <button className="admin-button" onClick={fetchData}>
+                  <RefreshCw size={14} /> Refresh
+                </button>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Rating</th>
+                      <th>Feedback / Message</th>
+                      <th>Type</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feedbackList.map((f) => (
+                      <tr key={f.id}>
+                        <td style={{ fontWeight: 600 }}>{f.username}</td>
+                        <td>
+                          <div style={{ display: 'flex', color: '#FFD700', gap: '2px' }}>
+                            {[1, 2, 3, 4, 5].map(star => (
+                              <Star key={star} size={12} fill={star <= f.rating ? 'currentColor' : 'none'} opacity={star <= f.rating ? 1 : 0.2} />
+                            ))}
+                          </div>
+                        </td>
+                        <td style={{ maxWidth: '400px', whiteSpace: 'normal', color: '#aaa', fontSize: '0.85rem' }}>
+                          {f.message || <span style={{ fontStyle: 'italic', opacity: 0.3 }}>No text provided</span>}
+                        </td>
+                        <td>
+                          <span className={`status-badge ${f.type === 'problem_solve' ? 'success' : f.type === 'room_leave' ? 'warning' : 'offline'}`} style={{ fontSize: '0.65rem' }}>
+                            {f.type.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.75rem', opacity: 0.5 }}>{new Date(f.createdAt).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                    {feedbackList.length === 0 && (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#555' }}>
+                          No feedback received yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

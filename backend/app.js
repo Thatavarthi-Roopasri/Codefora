@@ -8,6 +8,7 @@ import { createProfileController } from "./controllers/profileController.js";
 import { createAccountController } from "./controllers/accountController.js";
 import { createCompilerController } from "./controllers/compilerController.js";
 import { createAdminController } from "./controllers/adminController.js";
+import { createFeedbackController } from "./controllers/feedbackController.js";
 import { createApiRoutes } from "./routes/apiRoutes.js";
 import { AiService } from "./services/aiService.js";
 import { ExecutionService } from "./services/executionService.js";
@@ -23,6 +24,7 @@ export function createApp({ roomRepository, roomService, profileController, onRo
   const accountController = createAccountController();
   const compilerController = createCompilerController(new PistonService());
   const adminController = createAdminController(roomRepository);
+  const feedbackController = createFeedbackController();
 
   app.use(cors({ origin: corsOrigin }));
   app.use(express.json({ limit: "2mb" }));
@@ -31,7 +33,7 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     response.json({
       name: "Codefora API",
       status: "running",
-      routes: ["/api/health", "/api/rooms", "/api/run", "/api/compiler/run", "/api/ai", "/api/emotions", "/api/admin", "/api/test-network"]
+      routes: ["/api/health", "/api/rooms", "/api/run", "/api/compiler/run", "/api/ai", "/api/emotions", "/api/admin", "/api/feedback", "/api/test-network"]
     });
   });
 
@@ -61,7 +63,8 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     profileController, 
     accountController, 
     compilerController,
-    adminController
+    adminController,
+    feedbackController
   }));
 
   app.use((request, response) => {
