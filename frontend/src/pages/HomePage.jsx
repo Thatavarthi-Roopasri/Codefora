@@ -9,7 +9,7 @@ import { api } from "../api/client";
 import mountainImage from "../assets/home/neon-mountain.svg";
 import campfireImage from "../assets/home/neon-campfire.svg";
 import celebrationImage from "../assets/home/neon-celebration.svg";
-import lvssbg from "../../assets/lvssbg.mp4";
+import lvssbg from "../../assets/bg1.mp4";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
 import scene1 from "../../assets/scene1.jpeg";
 import scene2 from "../../assets/scene2.jpeg";

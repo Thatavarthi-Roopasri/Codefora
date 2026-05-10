@@ -4,7 +4,7 @@ import { logoutUser, signInWithGoogle } from "../lib/firebase";
 import { saveUsername } from "../lib/navigation";
 import { api } from "../api/client";
 import { BrandButton } from "../components/BrandButton";
-import lvssbg from "../../assets/lvssbg.mp4";
+import lvssbg from "../../assets/bg1.mp4";
 
 export default function SignInPage() {
   const navigate = useNavigate();

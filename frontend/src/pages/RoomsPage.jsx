@@ -158,9 +158,9 @@ export function RoomsPage() {
         width: '100%',
         height: '100%',
         zIndex: 0,
-        background: 'rgba(2, 8, 18, 0.5)',
-        backdropFilter: 'brightness(0.8)',
-        WebkitBackdropFilter: 'brightness(0.8)',
+        background: 'rgba(2, 8, 18, 0.4)',
+        backdropFilter: 'blur(6px) brightness(0.8)',
+        WebkitBackdropFilter: 'blur(6px) brightness(0.8)',
         pointerEvents: 'none'
       }} />
 
