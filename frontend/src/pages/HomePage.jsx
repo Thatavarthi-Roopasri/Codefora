@@ -9,7 +9,7 @@ import { api } from "../api/client";
 import mountainImage from "../assets/home/neon-mountain.svg";
 import campfireImage from "../assets/home/neon-campfire.svg";
 import celebrationImage from "../assets/home/neon-celebration.svg";
-import lvssbg from "../../assets/lvssbg.mp4";
+import homevid from "../../assets/homevid.mp4";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
 import scene1 from "../../assets/scene1.jpeg";
 import scene2 from "../../assets/scene2.jpeg";
@@ -188,7 +188,7 @@ export default function HomePage() {
             opacity: 1
           }}
         >
-          <source src={lvssbg} type="video/mp4" />
+          <source src={homevid} type="video/mp4" />
         </video>
 
         {/* Gradient overlay to seamlessly blend bottom into the rest of the dark page */}
