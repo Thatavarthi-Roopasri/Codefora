@@ -67,7 +67,20 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   useEffect(() => {
     canSpeakRef.current = canSpeak;
     if (micOn && localStream.current) {
-      users.filter((user) => user.socketId !== socket.id && user.role !== "Viewer").forEach((user) => createPeer(user.socketId, true));
+      users.filter((user) => user.socketId !== socket.id).forEach((user) => {
+        // Prevent massive glare storms by only creating initiator peers if we haven't already
+        const peer = peers.current.get(user.socketId);
+        if (!peer) {
+          createPeer(user.socketId, true);
+        } else {
+          // If the peer exists but doesn't have our tracks yet, add them and renegotiate
+          const existingSenders = peer.getSenders();
+          const missingTracks = localStream.current.getTracks().some(track => !existingSenders.some(s => s.track === track));
+          if (missingTracks) {
+            createPeer(user.socketId, true);
+          }
+        }
+      });
     }
   }, [canSpeak, micOn, users]);
 
@@ -590,7 +603,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
         const audio = document.createElement("audio");
         audio.autoplay = true;
-        audio.srcObject = event.streams[0];
+        audio.srcObject = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
         audio.id = `remote-audio-${targetId}`;
         audio.muted = false;
         audioHost.current?.appendChild(audio);
@@ -639,8 +652,6 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   }
 
   async function handleVoiceSignal({ from, signal }) {
-    if (!canSpeakRef.current) return;
-
     try {
       const peer = await createPeer(from, false);
 
