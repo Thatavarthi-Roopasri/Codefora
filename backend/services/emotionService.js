@@ -12,15 +12,16 @@ const sidersDir = path.join(__dirname, '../../frontend/assets/emotions_siders');
 const loopsDir = path.join(__dirname, '../../frontend/assets/emotions_loops');
 
 // Get all emotion files
-export const getAllEmotions = async (category = 'general') => {
+export const getAllEmotions = async (catInput = 'general') => {
   try {
+    const category = String(catInput || 'general').toLowerCase().trim();
     let targetDir = emotionsDir;
     let prefix = '';
 
-    if (category === 'sider') {
+    if (category === 'sider' || category === 'siders') {
       targetDir = sidersDir;
       prefix = 'sider:';
-    } else if (category === 'loop') {
+    } else if (category === 'loop' || category === 'loops') {
       targetDir = loopsDir;
       prefix = 'loop:';
     }

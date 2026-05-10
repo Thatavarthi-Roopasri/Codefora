@@ -2,7 +2,8 @@ import { getAllEmotions, getEmotionFile, initializeEmotionsInFirestore } from '.
 
 export const getEmotions = async (req, res) => {
   try {
-    const { category } = req.query;
+    const category = (req.query.category || 'general').toString().toLowerCase().trim();
+    console.log(`[Emotions] Fetching category: ${category}`);
     const emotions = await getAllEmotions(category);
     res.json(emotions);
   } catch (error) {
