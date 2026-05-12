@@ -91,19 +91,34 @@ export default function AdminDashboardPage() {
   const handleSaveProblem = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData.entries());
-    data.acceptance = parseInt(data.acceptance) || 0;
-    data.tags = data.tags.split(',').map(t => t.trim());
+    const rawData = Object.fromEntries(formData.entries());
+    
+    // Process complex fields
+    const data = {
+      title: rawData.title,
+      difficulty: rawData.difficulty,
+      statement: rawData.statement,
+      acceptance: parseInt(rawData.acceptance) || 0,
+      tags: rawData.tags.split(',').map(t => t.trim()).filter(Boolean),
+      constraints: rawData.constraints.split('\n').map(c => c.trim()).filter(Boolean),
+      solutionAvailable: e.target.solutionAvailable.checked,
+      hint: rawData.hint || "",
+      tests: [
+        { input: rawData.test1Input, output: rawData.test1Output },
+        { input: rawData.test2Input, output: rawData.test2Output }
+      ].filter(t => t.input || t.output)
+    };
     
     try {
       if (editingProblem) {
         await api.request(`/api/admin/problems/${editingProblem.id}`, { method: 'PUT', body: JSON.stringify(data) });
       } else {
-        await api.request(`/api/admin/problems`, { method: 'POST', body: JSON.stringify({ ...data, id: data.title.toLowerCase().replace(/ /g, '-') }) });
+        await api.request(`/api/admin/problems`, { method: 'POST', body: JSON.stringify({ ...data, id: data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') }) });
       }
       setShowProblemForm(false);
       setEditingProblem(null);
       fetchData();
+      setActivityLog(prev => [{ icon: <Code size={16} />, class: 'updated', text: `Problem <strong>${data.title}</strong> was ${editingProblem ? 'updated' : 'created'}.`, time: 'just now' }, ...prev]);
     } catch (err) { alert(err.message); }
   };
 
@@ -193,35 +208,87 @@ export default function AdminDashboardPage() {
         <div className="admin-content-area" style={{ minWidth: 0, overflowX: 'hidden' }}>
           {/* PROBLEM FORM MODAL */}
           {showProblemForm && (
-            <div className="admin-panel" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1000, width: '500px', background: '#111', boxShadow: '0 0 40px rgba(0,0,0,0.8)', border: '1px solid var(--primary-blue)' }}>
-              <div className="admin-panel-header">
-                <h2>{editingProblem ? 'Edit Problem' : 'Add New Problem'}</h2>
-                <button onClick={() => setShowProblemForm(false)} className="admin-action-btn">✕</button>
+            <div className="admin-panel admin-modal-overlay">
+              <div className="admin-modal-card" style={{ width: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div className="admin-panel-header">
+                  <h2>{editingProblem ? 'Edit Problem' : 'Add New Problem'}</h2>
+                  <button onClick={() => setShowProblemForm(false)} className="admin-action-btn">✕</button>
+                </div>
+                <form onSubmit={handleSaveProblem} className="admin-settings-form">
+                  <div className="admin-setting-row-flex">
+                    <div className="admin-setting-group" style={{ flex: 2 }}>
+                      <label className="admin-setting-label">Title</label>
+                      <input name="title" className="admin-input" defaultValue={editingProblem?.title} placeholder="e.g. Two Sum" required />
+                    </div>
+                    <div className="admin-setting-group" style={{ flex: 1 }}>
+                      <label className="admin-setting-label">Difficulty</label>
+                      <select name="difficulty" className="admin-input" defaultValue={editingProblem?.difficulty || 'Easy'}>
+                        <option>Easy</option><option>Medium</option><option>Hard</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="admin-setting-group">
+                    <label className="admin-setting-label">Statement</label>
+                    <textarea name="statement" className="admin-input" style={{ minHeight: '80px' }} defaultValue={editingProblem?.statement} required />
+                  </div>
+
+                  <div className="admin-setting-group">
+                    <label className="admin-setting-label">Constraints (One per line)</label>
+                    <textarea name="constraints" className="admin-input" style={{ minHeight: '60px' }} defaultValue={editingProblem?.constraints?.join('\n')} placeholder="e.g. 1 <= n <= 10^5" />
+                  </div>
+
+                  <div className="admin-setting-row-flex">
+                    <div className="admin-setting-group" style={{ flex: 1 }}>
+                      <label className="admin-setting-label">Tags (comma separated)</label>
+                      <input name="tags" className="admin-input" defaultValue={editingProblem?.tags?.join(', ')} placeholder="Arrays, Math" />
+                    </div>
+                    <div className="admin-setting-group" style={{ flex: 0.5 }}>
+                      <label className="admin-setting-label">Acceptance %</label>
+                      <input name="acceptance" type="number" className="admin-input" defaultValue={editingProblem?.acceptance || 50} />
+                    </div>
+                  </div>
+
+                  <div className="admin-setting-group checkbox-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
+                    <input type="checkbox" name="solutionAvailable" id="solAvail" defaultChecked={editingProblem?.solutionAvailable} />
+                    <label htmlFor="solAvail" className="admin-setting-label" style={{ marginBottom: 0 }}>Solution/Hint Available</label>
+                  </div>
+
+                  <div className="admin-setting-group">
+                    <label className="admin-setting-label">Hint / Solution Text</label>
+                    <textarea name="hint" className="admin-input" style={{ minHeight: '60px' }} defaultValue={editingProblem?.hint} placeholder="Explain the approach or provide the solution..." />
+                  </div>
+
+                  <div className="admin-test-cases-section">
+                    <h3 style={{ fontSize: '0.9rem', color: '#FF9100', margin: '15px 0 10px' }}>Test Cases (Judging)</h3>
+                    <div className="admin-test-case-row">
+                      <div className="admin-setting-group">
+                        <label className="admin-setting-label">Test Case 1 Input</label>
+                        <textarea name="test1Input" className="admin-input code-font" defaultValue={editingProblem?.tests?.[0]?.input} />
+                      </div>
+                      <div className="admin-setting-group">
+                        <label className="admin-setting-label">Test Case 1 Output</label>
+                        <textarea name="test1Output" className="admin-input code-font" defaultValue={editingProblem?.tests?.[0]?.output} />
+                      </div>
+                    </div>
+                    <div className="admin-test-case-row">
+                      <div className="admin-setting-group">
+                        <label className="admin-setting-label">Test Case 2 Input</label>
+                        <textarea name="test2Input" className="admin-input code-font" defaultValue={editingProblem?.tests?.[1]?.input} />
+                      </div>
+                      <div className="admin-setting-group">
+                        <label className="admin-setting-label">Test Case 2 Output</label>
+                        <textarea name="test2Output" className="admin-input code-font" defaultValue={editingProblem?.tests?.[1]?.output} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px', paddingBottom: '10px' }}>
+                    <button type="submit" className="admin-button primary" style={{ flex: 1 }}>Save Problem</button>
+                    <button type="button" onClick={() => setShowProblemForm(false)} className="admin-button" style={{ flex: 1 }}>Cancel</button>
+                  </div>
+                </form>
               </div>
-              <form onSubmit={handleSaveProblem} className="admin-settings-form">
-                <div className="admin-setting-group">
-                  <label className="admin-setting-label">Title</label>
-                  <input name="title" className="admin-input" defaultValue={editingProblem?.title} required />
-                </div>
-                <div className="admin-setting-group">
-                  <label className="admin-setting-label">Difficulty</label>
-                  <select name="difficulty" className="admin-input" defaultValue={editingProblem?.difficulty || 'Easy'}>
-                    <option>Easy</option><option>Medium</option><option>Hard</option>
-                  </select>
-                </div>
-                <div className="admin-setting-group">
-                  <label className="admin-setting-label">Statement</label>
-                  <textarea name="statement" className="admin-input" style={{ minHeight: '100px' }} defaultValue={editingProblem?.statement} required />
-                </div>
-                <div className="admin-setting-group">
-                  <label className="admin-setting-label">Tags (comma separated)</label>
-                  <input name="tags" className="admin-input" defaultValue={editingProblem?.tags?.join(', ')} />
-                </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                  <button type="submit" className="admin-button primary" style={{ flex: 1 }}>Save Problem</button>
-                  <button type="button" onClick={() => setShowProblemForm(false)} className="admin-button" style={{ flex: 1 }}>Cancel</button>
-                </div>
-              </form>
             </div>
           )}
 

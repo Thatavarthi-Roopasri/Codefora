@@ -619,6 +619,54 @@ input:checked + .slider:before {
   font-weight: bold;
 }
 
+/* Modal Overlay & Card */
+.admin-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.admin-modal-card {
+  background: #11141d;
+  border: 1px solid rgba(139, 233, 253, 0.2);
+  border-radius: 16px;
+  padding: 30px;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+}
+
+.admin-setting-row-flex {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+}
+
+.admin-test-case-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.code-font {
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.8rem;
+  background: #000 !important;
+}
+
+.checkbox-group input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
 /* Layout responsiveness */
 @media (max-width: 1200px) {
   .admin-main-content {

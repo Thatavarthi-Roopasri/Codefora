@@ -8,6 +8,7 @@ import { createProfileController } from "./controllers/profileController.js";
 import { createAccountController } from "./controllers/accountController.js";
 import { createCompilerController } from "./controllers/compilerController.js";
 import { createAdminController } from "./controllers/adminController.js";
+import { createProblemController } from "./controllers/problemController.js";
 import { createFeedbackController } from "./controllers/feedbackController.js";
 import { createApiRoutes } from "./routes/apiRoutes.js";
 import { AiService } from "./services/aiService.js";
@@ -24,6 +25,7 @@ export function createApp({ roomRepository, roomService, profileController, onRo
   const accountController = createAccountController();
   const compilerController = createCompilerController(new PistonService());
   const adminController = createAdminController(roomRepository);
+  const problemController = createProblemController();
   const feedbackController = createFeedbackController();
 
   app.use(cors({ origin: corsOrigin }));
@@ -64,6 +66,7 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     accountController, 
     compilerController,
     adminController,
+    problemController,
     feedbackController
   }));
 

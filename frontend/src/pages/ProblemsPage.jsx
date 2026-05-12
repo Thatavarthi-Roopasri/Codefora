@@ -6,7 +6,6 @@ import { api } from "../api/client";
 import { BrandButton } from "../components/BrandButton";
 import { Navbar } from "../components/Navbar";
 import { trackEvent } from "../lib/analytics";
-import { problems } from "../data/problems";
 import { saveUsername, saveHostToken, saveInviteCode } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
 
@@ -56,9 +55,26 @@ export function ProblemsPage() {
   const [problemAiThinking, setProblemAiThinking] = useState(false);
   const [problemAiMessages, setProblemAiMessages] = useState([]);
 
+  const [problems, setProblems] = useState([]);
+  const [loadingProblems, setLoadingProblems] = useState(true);
+
   const selectedProblem = problems.find((problem) => problem.id === selectedProblemId) || null;
   const selectedLanguage = LANGUAGE_OPTIONS.find((item) => item.value === language) || LANGUAGE_OPTIONS[0];
   const code = codeByLanguage[language] || selectedLanguage.template;
+
+  useEffect(() => {
+    async function loadProblems() {
+      try {
+        const data = await api.request("/api/problems");
+        setProblems(data);
+      } catch (err) {
+        console.error("Failed to load problems:", err);
+      } finally {
+        setLoadingProblems(false);
+      }
+    }
+    loadProblems();
+  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
@@ -393,6 +409,15 @@ export function ProblemsPage() {
                 {selectedProblem.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}
               </ul>
             </section>
+
+            {selectedProblem.hint && (
+              <section className="problem-hint-section">
+                <h2>Hint / Solution</h2>
+                <div className="hint-box">
+                  <p>{selectedProblem.hint}</p>
+                </div>
+              </section>
+            )}
 
             <section>
               <h2>Sample Test Cases</h2>

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createCompilerRoutes } from "./compiler.js";
 import { adminAuth } from "../middleware/adminAuth.js";
 
-export function createApiRoutes({ roomController, executionController, aiController, emotionController, profileController, accountController, compilerController, adminController, feedbackController }) {
+export function createApiRoutes({ roomController, executionController, aiController, emotionController, profileController, accountController, compilerController, adminController, problemController, feedbackController }) {
   const router = Router();
 
   router.get("/health", (_request, response) => response.json({ ok: true }));
@@ -10,6 +10,10 @@ export function createApiRoutes({ roomController, executionController, aiControl
   router.post("/rooms", roomController.rateLimit, roomController.create);
   router.get("/rooms/invite/:code", roomController.findByInviteCode);
   router.get("/rooms/:id", roomController.get);
+  
+  // Public problem routes
+  router.get("/problems", problemController.list);
+  router.get("/problems/:id", problemController.get);
   // Profile routes
   if (profileController) {
     router.get("/profiles/:userId", profileController.get);
