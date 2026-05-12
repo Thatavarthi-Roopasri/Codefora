@@ -414,17 +414,9 @@ export default function HomePage() {
               <Zap style={{ color: 'var(--brand-primary)' }} /> Live Battles
             </h3>
             <div style={{ display: 'grid', gap: '15px' }}>
-              {[
-                { p1: 'SpeedCoder', p2: 'CodeBeam', status: 'Running' },
-                { p1: 'AlgoNinja', p2: 'DevKing', status: 'Waiting' },
-              ].map((battle, i) => (
-                <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontWeight: 600 }}>{battle.p1} <span style={{ opacity: 0.5, margin: '0 10px' }}>vs</span> {battle.p2}</div>
-                  <span style={{ fontSize: '12px', background: battle.status === 'Running' ? 'rgba(80, 250, 123, 0.1)' : 'rgba(255, 122, 24, 0.1)', color: battle.status === 'Running' ? '#50fa7b' : '#ff7a18', padding: '4px 12px', borderRadius: '999px' }}>
-                    {battle.status}
-                  </span>
-                </div>
-              ))}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '40px 20px', borderRadius: '12px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem' }}>
+                No active battles yet. <br/> Check back later!
+              </div>
             </div>
             <button 
               className="btn-modern secondary" 
@@ -442,18 +434,9 @@ export default function HomePage() {
               <Trophy style={{ color: '#00f2ff' }} /> Top Performers
             </h3>
             <div style={{ display: 'grid', gap: '12px' }}>
-              {[
-                { rank: 1, name: 'codeMaster_09', score: '2450' },
-                { rank: 2, name: 'AlgoNinja', score: '2320' },
-                { rank: 3, name: 'BugSlayer', score: '2105' },
-              ].map((dev) => (
-                <div key={dev.rank} style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontWeight: 800, width: '25px', color: dev.rank === 1 ? 'var(--brand-primary)' : 'white' }}>#{dev.rank}</span>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>👤</div>
-                  <span style={{ flex: 1, fontWeight: 600 }}>{dev.name}</span>
-                  <span style={{ fontWeight: 700, color: 'var(--brand-primary)' }}>{dev.score} 🔥</span>
-                </div>
-              ))}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '40px 20px', borderRadius: '12px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.9rem' }}>
+                Rankings yet to be updated. <br/> Join a room to start competing!
+              </div>
             </div>
           </div>
         </section>

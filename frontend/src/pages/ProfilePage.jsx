@@ -310,12 +310,12 @@ export function ProfilePage() {
               <div className="stats-mini-grid">
                 <div className="mini-stat">
                   <Shield size={16} className="text-blue" />
-                  <strong>1200</strong>
+                  <strong>N/A</strong>
                   <span>Current Rating</span>
                 </div>
                 <div className="mini-stat">
                   <Award size={16} className="text-orange" />
-                  <strong>1200</strong>
+                  <strong>N/A</strong>
                   <span>Max Rating</span>
                 </div>
                 <div className="mini-stat">
@@ -367,8 +367,8 @@ export function ProfilePage() {
                 <div className="activity-item">
                   <div className="activity-icon bg-orange"><Award size={12} /></div>
                   <div className="activity-content">
-                    <strong>Reached Rating 1200</strong>
-                    <span>Keep pushing! 🚀</span>
+                    <strong>Account Created</strong>
+                    <span>Welcome to Codefora! 🚀</span>
                   </div>
                   <div className="activity-time">1h ago</div>
                 </div>
