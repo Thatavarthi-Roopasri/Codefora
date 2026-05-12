@@ -13,6 +13,7 @@ import bg1 from "../../assets/bg1.mp4";
 
 
 import { Navbar } from "../components/Navbar";
+import FeedbackModal from "../components/FeedbackModal";
 
 export function RoomsPage() {
   const navigate = useNavigate();
@@ -30,6 +31,8 @@ export function RoomsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackData, setFeedbackData] = useState({ username: "", type: "general" });
 
   async function handleOpenProfile(u) {
     if (u.userId) {
@@ -56,6 +59,23 @@ export function RoomsPage() {
     if (msg) {
       setTimeout(() => alert(msg), 100);
       navigate(location.pathname, { replace: true });
+    }
+
+    // Handle feedback modal trigger
+    const feedback = params.get("feedback");
+    if (feedback === "true") {
+      setFeedbackData({
+        username: params.get("username") || "",
+        type: params.get("type") || "room_leave"
+      });
+      setShowFeedbackModal(true);
+      // Clean up URL
+      const newParams = new URLSearchParams(location.search);
+      newParams.delete("feedback");
+      newParams.delete("username");
+      newParams.delete("type");
+      const newSearch = newParams.toString();
+      navigate(location.pathname + (newSearch ? `?${newSearch}` : ""), { replace: true });
     }
 
     return () => socket.off("rooms:update", setRooms);
@@ -493,6 +513,13 @@ export function RoomsPage() {
           </div>
         </div>
       )}
+
+      <FeedbackModal 
+        isOpen={showFeedbackModal} 
+        onClose={() => setShowFeedbackModal(false)}
+        username={feedbackData.username}
+        type={feedbackData.type}
+      />
       </div>
     </main>
   );

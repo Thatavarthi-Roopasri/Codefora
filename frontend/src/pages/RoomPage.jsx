@@ -13,7 +13,6 @@ import { FooterBar } from "../components/room/FooterBar";
 import { problems } from "../data/problems";
 import { getUsername, saveUsername } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
-import FeedbackModal from "../components/FeedbackModal";
 
 export function RoomPage() {
   const { roomId } = useParams();
@@ -27,8 +26,6 @@ export function RoomPage() {
   const [activeCommsTab, setActiveCommsTab] = useState("chat");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showFloatingProblem, setShowFloatingProblem] = useState(false);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [feedbackType, setFeedbackType] = useState('general');
 
   const isBypassingBlocker = useRef(false);
 
@@ -81,21 +78,21 @@ export function RoomPage() {
 
   const confirmLeave = () => {
     setShowLeavePrompt(false);
-    setFeedbackType('room_leave');
-    setShowFeedbackModal(true);
-  };
-
-  const handleFeedbackClose = () => {
-    setShowFeedbackModal(false);
+    isBypassingBlocker.current = true;
     if (permissions.isHost) {
-      actions.endRoom(true); 
+      actions.endRoom(true);
     }
+    const feedbackUrl = `/rooms?feedback=true&username=${encodeURIComponent(joinName)}`;
     if (blocker.state === "blocked") {
       blocker.proceed();
+      // blocker.proceed() might not handle search params if we just proceed, 
+      // but usually we want to navigate explicitly if we want params.
+      navigate(feedbackUrl);
     } else {
-      navigate("/rooms");
+      navigate(feedbackUrl);
     }
   };
+
 
   const cancelLeave = () => {
     setShowLeavePrompt(false);
@@ -265,8 +262,8 @@ export function RoomPage() {
             problem={activeProblem} 
             onClose={() => setShowFloatingProblem(false)} 
             onSolve={() => {
-              setFeedbackType('problem_solve');
-              setShowFeedbackModal(true);
+              isBypassingBlocker.current = true;
+              navigate(`/rooms?feedback=true&type=problem_solve&username=${encodeURIComponent(joinName)}`);
             }}
           />
         )}
@@ -376,12 +373,6 @@ export function RoomPage() {
           </div>
         )}
       </div>
-      <FeedbackModal 
-        isOpen={showFeedbackModal} 
-        onClose={handleFeedbackClose}
-        username={joinName}
-        type={feedbackType}
-      />
     </div>
   );
 }
