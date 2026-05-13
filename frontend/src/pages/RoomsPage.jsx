@@ -295,13 +295,6 @@ export function RoomsPage() {
           <div className="rooms-footer-brand">
             <BrandButton logo />
             <p>The real-time competitive coding platform for developers to learn, compete and grow together.</p>
-            <div className="rooms-footer-social">
-              <a href="#" aria-label="GitHub"><Code size={20} /></a>
-              <a href="#" aria-label="Discord"><Code size={20} /></a>
-              <a href="#" aria-label="Twitter"><Code size={20} /></a>
-              <a href="#" aria-label="LinkedIn"><Code size={20} /></a>
-              <a href="#" aria-label="YouTube"><Code size={20} /></a>
-            </div>
           </div>
 
           <div className="rooms-footer-column">
@@ -346,14 +339,6 @@ export function RoomsPage() {
             </ul>
           </div>
 
-          <div className="rooms-footer-newsletter">
-            <h4>Stay in the loop</h4>
-            <p>Get updates about contests, new features and coding tips.</p>
-            <div className="rooms-newsletter-form">
-              <input type="email" placeholder="Enter your email" />
-              <button className="button button-subscribe">Subscribe</button>
-            </div>
-          </div>
         </div>
 
         <div className="rooms-footer-bottom">

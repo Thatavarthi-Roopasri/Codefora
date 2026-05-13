@@ -8,7 +8,8 @@ const localFeedbackPath = path.join(__dirname, "../data/feedback.json");
 
 async function readJSON(filePath) {
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
+    const data = await fs.readFile(filePath, "utf8");
+    return JSON.parse(data);
   } catch {
     return [];
   }
@@ -31,18 +32,24 @@ export function createFeedbackController() {
           username: username || "Anonymous",
           rating: Number(rating) || 0,
           message: message || "",
-          type: type || "general", // 'general', 'room_leave', 'problem_solve'
+          type: type || "general",
           createdAt: Date.now()
         };
 
-        if (!db) {
-          const allFeedback = await readJSON(localFeedbackPath);
-          allFeedback.push(feedback);
-          await writeJSON(localFeedbackPath, allFeedback);
-          return response.json({ success: true });
+        // Always save to local file (primary storage)
+        const allFeedback = await readJSON(localFeedbackPath);
+        allFeedback.push(feedback);
+        await writeJSON(localFeedbackPath, allFeedback);
+
+        // Also save to Firestore if available (backup)
+        if (db) {
+          try {
+            await db.collection("feedback").doc(feedback.id).set(feedback);
+          } catch (fbErr) {
+            console.warn("Firestore feedback backup failed:", fbErr.message);
+          }
         }
 
-        await db.collection("feedback").doc(feedback.id).set(feedback);
         return response.json({ success: true });
       } catch (error) {
         console.error("Feedback submission failed:", error);
@@ -52,15 +59,9 @@ export function createFeedbackController() {
 
     getAll: async (request, response) => {
       try {
-        if (!db) {
-          const allFeedback = await readJSON(localFeedbackPath);
-          return response.json(allFeedback.sort((a, b) => b.createdAt - a.createdAt));
-        }
-
-        const snapshot = await db.collection("feedback").orderBy("createdAt", "desc").get();
-        const feedback = [];
-        snapshot.forEach(doc => feedback.push(doc.data()));
-        return response.json(feedback);
+        // Always read from local file (primary)
+        const allFeedback = await readJSON(localFeedbackPath);
+        return response.json(allFeedback.sort((a, b) => b.createdAt - a.createdAt));
       } catch (error) {
         console.error("Fetching feedback failed:", error);
         return response.status(500).json({ error: error.message });
