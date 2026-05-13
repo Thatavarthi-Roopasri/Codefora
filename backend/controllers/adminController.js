@@ -1,9 +1,9 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createAuth, createFirestore } from "../config/firebase.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const localUsersPath = path.join(__dirname, "../data/manualUsers.json");
 const localProblemsPath = path.join(__dirname, "../data/problems.json");
 
 async function readJSON(filePath) {
@@ -21,27 +21,42 @@ async function writeJSON(filePath, data) {
 }
 
 export function createAdminController(roomRepository) {
+  const auth = createAuth();
+  const db = createFirestore();
+
   return {
     getStats: async (request, response) => {
-      const users = await readJSON(localUsersPath);
-      const problems = await readJSON(localProblemsPath);
-      const rooms = roomRepository.listAll();
-      
-      const totalUsers = Object.keys(users).length;
-      const activeRooms = rooms.length;
-      const totalProblems = problems.length;
-      
-      // Calculate online users (users in rooms)
-      const onlineUserIds = new Set();
-      rooms.forEach(r => (r.users || []).forEach(u => onlineUserIds.add(u.userId || u.socketId)));
+      try {
+        const problems = await readJSON(localProblemsPath);
+        const rooms = roomRepository.listAll();
+        
+        let totalUsers = 0;
+        if (auth) {
+          const listUsersResult = await auth.listUsers(1);
+          // listUsers doesn't give a total count easily without iterating, 
+          // but we can at least get an estimate or use a counter if we had one.
+          // For now, let's try to get a better count if possible or use Firestore profiles count.
+          if (db) {
+            const snapshot = await db.collection("profiles").count().get();
+            totalUsers = snapshot.data().count;
+          }
+        }
 
-      return response.json({
-        totalUsers,
-        onlineUsers: onlineUserIds.size,
-        activeRooms,
-        totalProblems,
-        mostSolved: "Two Sum" // Placeholder for now
-      });
+        // Calculate online users (users in rooms)
+        const onlineUserIds = new Set();
+        rooms.forEach(r => (r.users || []).forEach(u => onlineUserIds.add(u.userId || u.socketId)));
+
+        return response.json({
+          totalUsers,
+          onlineUsers: onlineUserIds.size,
+          activeRooms: rooms.length,
+          totalProblems: problems.length,
+          mostSolved: "N/A"
+        });
+      } catch (err) {
+        console.error("Admin stats failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
     },
 
     getRooms: async (request, response) => {
@@ -58,28 +73,42 @@ export function createAdminController(roomRepository) {
     },
 
     getUsers: async (request, response) => {
-      const accounts = await readJSON(localUsersPath);
-      const users = Object.entries(accounts).map(([id, data]) => {
-        let name = data.profile?.displayName || data.account?.username;
-        let isGoogle = id.length > 20 && !id.startsWith("manual_");
-        
-        if (!name) {
-          name = isGoogle ? "Google User" : "Unknown User";
+      try {
+        if (!auth) return response.json([]);
+
+        const listUsersResult = await auth.listUsers(1000);
+        const authUsers = listUsersResult.users;
+
+        // Fetch profiles from Firestore to get more info (like rating, solved count, etc)
+        const profilesMap = {};
+        if (db) {
+          const profilesSnap = await db.collection("profiles").get();
+          profilesSnap.forEach(doc => {
+            profilesMap[doc.id] = doc.data();
+          });
         }
 
-        return {
-          userId: id,
-          name: name,
-          emotionId: data.profile?.emotionId || "",
-          photoURL: data.profile?.photoURL || "",
-          rating: 1500, // Placeholder
-          solved: 0, // Placeholder
-          rooms: 0, // Placeholder
-          status: "Offline", // Placeholder
-          role: data.account?.role || "user"
-        };
-      });
-      return response.json(users);
+        const users = authUsers.map(user => {
+          const profile = profilesMap[user.uid] || {};
+          return {
+            userId: user.uid,
+            name: user.displayName || profile.name || user.email?.split('@')[0] || "Unknown User",
+            email: user.email,
+            emotionId: profile.emotionId || "",
+            photoURL: user.photoURL || profile.photoURL || "",
+            rating: profile.rating || 1500,
+            solved: profile.solvedCount || 0,
+            status: "Offline", // Real-time status would require more logic
+            role: profile.role || "user",
+            createdAt: user.metadata.creationTime
+          };
+        });
+
+        return response.json(users);
+      } catch (err) {
+        console.error("Admin list users failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
     },
 
     getProblems: async (request, response) => {

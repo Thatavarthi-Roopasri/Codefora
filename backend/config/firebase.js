@@ -45,3 +45,10 @@ export function createFirestore() {
     return null;
   }
 }
+
+export function createAuth() {
+  if (!admin.apps.length) {
+    createFirestore();
+  }
+  return admin.auth();
+}
