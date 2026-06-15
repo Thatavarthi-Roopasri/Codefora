@@ -130,7 +130,8 @@ export default function HomePage() {
         backgroundPosition: 'center',
         opacity: 0.15,
         zIndex: 0,
-        pointerEvents: 'none'
+        pointerEvents: 'none',
+        filter: 'var(--home-video-filter)'
       }}></div>
 
       {/* GLOWING BACKGROUND ELEMENTS - Premium Orange Dominant */}
@@ -140,7 +141,7 @@ export default function HomePage() {
         left: '10%',
         width: '80vw',
         height: '80vw',
-        background: 'radial-gradient(circle, rgba(255, 145, 0, 0.18) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(var(--primary-rgb), 0.18) 0%, transparent 70%)',
         filter: 'blur(130px)',
         zIndex: 0,
         pointerEvents: 'none',
@@ -152,7 +153,7 @@ export default function HomePage() {
         right: '0%',
         width: '40vw',
         height: '40vw',
-        background: 'radial-gradient(circle, rgba(255, 122, 24, 0.12) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(var(--primary-rgb), 0.12) 0%, transparent 70%)',
         filter: 'blur(100px)',
         zIndex: 0,
         pointerEvents: 'none',
@@ -180,13 +181,16 @@ export default function HomePage() {
           playsInline
           style={{
             position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
+            top: '50%',
+            left: '50%',
+            minWidth: '100%',
+            minHeight: '100%',
+            width: 'auto',
+            height: 'auto',
+            transform: 'translate(-50%, -50%)',
             zIndex: 0,
-            opacity: 1
+            objectFit: 'cover',
+            opacity: 0.8
           }}
         >
           <source src={homevideo} type="video/mp4" />
@@ -213,7 +217,7 @@ export default function HomePage() {
           }}>
             <div style={{ flex: 1, maxWidth: '800px' }}>
               <h4 style={{
-                color: '#FF9100', fontSize: '1.1rem', fontWeight: 800,
+                color: 'var(--primary-accent)', fontSize: '1.1rem', fontWeight: 800,
                 textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '20px',
                 textShadow: '0 2px 10px rgba(0,0,0,0.8)'
               }}>
@@ -235,7 +239,7 @@ export default function HomePage() {
                 programming skills through real-time collaboration.
               </p>
               <div style={{ display: 'flex', gap: '20px' }}>
-                <button onClick={() => navigate("/rooms")} style={{
+                <button id="tour-join-room" onClick={() => navigate("/rooms")} style={{
                   padding: '16px 36px', fontSize: '1.1rem', fontWeight: 'bold',
                   background: '#FF9100', color: '#1a0e00', border: 'none', borderRadius: '12px',
                   display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
@@ -246,7 +250,7 @@ export default function HomePage() {
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                   Join Room
                 </button>
-                <button onClick={() => navigate("/problems")} style={{
+                <button id="tour-practice-button" onClick={() => navigate("/problems")} style={{
                   padding: '16px 36px', fontSize: '1.1rem', fontWeight: 'bold',
                   background: '#00E5FF', color: '#001a1d', border: 'none',
                   borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px',
@@ -273,7 +277,7 @@ export default function HomePage() {
               }
 
               ::-webkit-scrollbar-thumb {
-                background: linear-gradient(to bottom, #FF9100, #00E5FF) !important;
+                background: linear-gradient(to bottom, var(--primary-accent), #00E5FF) !important;
                 border-radius: 10px !important;
                 border: 3px solid #030303 !important;
                 box-shadow: 0 0 10px rgba(255, 145, 0, 0.5) !important;
@@ -286,7 +290,7 @@ export default function HomePage() {
               /* Firefox Support */
               * {
                 scrollbar-width: thin;
-                scrollbar-color: #FF9100 #030303;
+                scrollbar-color: var(--primary-accent) #030303;
               }
 
               @keyframes scrollDown {
@@ -322,14 +326,14 @@ export default function HomePage() {
                 <div style={{
                   width: '4px',
                   height: '8px',
-                  background: 'linear-gradient(to bottom, #FF9100, #00E5FF)',
+                  background: 'linear-gradient(to bottom, var(--primary-accent), #00E5FF)',
                   borderRadius: '2px',
                   position: 'absolute',
                   top: '10px',
                   left: '50%',
                   marginLeft: '-2px',
                   animation: 'scrollDown 2s infinite ease-in-out',
-                  boxShadow: '0 0 10px #FF9100'
+                  boxShadow: '0 0 10px var(--primary-accent)'
                 }}></div>
               </div>
               <style>{`
@@ -369,7 +373,7 @@ export default function HomePage() {
               border: '1px solid rgba(255,255,255,0.1)',
               cursor: 'pointer'
             }}>
-              <div style={{ background: 'rgba(255, 122, 24, 0.2)', width: '60px', height: '60px', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', color: 'var(--brand-primary)', backdropFilter: 'blur(5px)' }}>
+              <div style={{ background: 'rgba(var(--primary-rgb), 0.2)', width: '60px', height: '60px', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', color: 'var(--brand-primary)', backdropFilter: 'blur(5px)' }}>
                 <Flame size={32} />
               </div>
               <h3 style={{ fontSize: '1.5rem', marginBottom: '15px', textShadow: '0 2px 10px rgba(0,0,0,0.8)' }}>Live Rooms</h3>
@@ -442,70 +446,6 @@ export default function HomePage() {
         </section>
       </div>
 
-    <footer className="rooms-footer" style={{ 
-      backgroundImage: `url(${loopsbg})`, 
-      backgroundSize: 'cover', 
-      backgroundPosition: 'center',
-      position: 'relative'
-    }}>
-      {/* Overlay for footer readability */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1 }}></div>
-      
-      <div className="rooms-footer-content" style={{ position: 'relative', zIndex: 2 }}>
-          <div className="rooms-footer-brand">
-            <BrandButton logo />
-            <p>The real-time competitive coding platform for developers to learn, compete and grow together.</p>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Platform</h4>
-            <ul>
-              <li><a href="#">Rooms</a></li>
-              <li><a href="#">Problems</a></li>
-              <li><a href="#">Battles</a></li>
-              <li><a href="#">Contests</a></li>
-              <li><a href="#">Leaderboard</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Resources</h4>
-            <ul>
-              <li><a href="#">Blog</a></li>
-              <li><a href="#">Docs</a></li>
-              <li><a href="#">Guides</a></li>
-              <li><a href="#">API</a></li>
-              <li><a href="#">Changelog</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Community</h4>
-            <ul>
-              <li><a href="#">Discussions</a></li>
-              <li><a href="#">Events</a></li>
-              <li><a href="#">Top Users</a></li>
-              <li><a href="#">Hall of Fame</a></li>
-              <li><a href="#">Support</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Legal</h4>
-            <ul>
-              <li><a href="#">Privacy Policy</a></li>
-              <li><a href="#">Terms of Service</a></li>
-              <li><a href="#">Code of Conduct</a></li>
-            </ul>
-          </div>
-
-        </div>
-
-        <div className="rooms-footer-bottom" style={{ position: 'relative', zIndex: 2, borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '40px' }}>
-          <p>&copy; 2026 Codefora. All rights reserved.</p>
-          <p>Made with <span style={{ color: 'var(--brand-primary)' }}>❤️</span> for developers</p>
-        </div>
-      </footer>
     </main>
   );
 }

@@ -34,7 +34,7 @@ export default function EmotionPicker({ selectedEmotion, onSelectEmotion, catego
   }
 
   return (
-    <div className="emotion-picker-container">
+    <div className="emotion-picker-container" data-theme={category}>
       <div className="emotion-grid">
         {emotions.map((emotion) => (
           <button

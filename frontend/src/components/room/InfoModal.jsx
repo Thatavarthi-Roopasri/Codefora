@@ -5,7 +5,7 @@ export function InfoModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="profile-modal-overlay" style={{ zIndex: 1000 }}>
+    <div className="profile-modal-overlay" style={{ zIndex: 10000 }}>
       <div className="profile-modal-card" style={{ maxWidth: '600px', width: '90%' }}>
         <div className="profile-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -23,7 +23,7 @@ export function InfoModal({ isOpen, onClose }) {
               <Shield size={16} /> Understanding Roles
             </h4>
             <div style={{ display: 'grid', gap: '12px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px', borderLeft: '3px solid #f97316' }}>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px', borderLeft: '3px solid var(--primary-color)' }}>
                 <strong>Host:</strong> Complete control over the room. Can change roles, kick members, and end the session.
               </div>
               <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '8px', borderLeft: '3px solid #3b82f6' }}>
@@ -53,7 +53,7 @@ export function InfoModal({ isOpen, onClose }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <Upload size={16} style={{ color: '#ff7a18', flexShrink: 0 }} />
+                <Upload size={16} style={{ color: 'var(--primary-color)', flexShrink: 0 }} />
                 <div style={{ fontSize: '0.85rem' }}>
                   <strong>Import/Export:</strong> Upload files from your device or export the entire room as a ZIP archive.
                 </div>
@@ -79,7 +79,7 @@ export function InfoModal({ isOpen, onClose }) {
             </div>
           </section>
 
-          <div style={{ background: 'rgba(249, 115, 22, 0.05)', padding: '15px', borderRadius: '10px', border: '1px solid rgba(249, 115, 22, 0.2)', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
+          <div style={{ background: 'rgba(var(--primary-rgb), 0.05)', padding: '15px', borderRadius: '10px', border: '1px solid rgba(var(--primary-rgb), 0.2)', fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)' }}>
             <strong>Pro Tip:</strong> Only the Host can change a Viewer to an Editor. If you're a viewer and want to code, ask the host in the chat!
           </div>
         </div>

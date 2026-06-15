@@ -49,11 +49,11 @@ export function CommsPanel({
   };
 
   useLayoutEffect(() => {
-    scrollToBottom();
+    setTimeout(scrollToBottom, 10);
   }, [messages, showChat]);
 
   useLayoutEffect(() => {
-    scrollAiToBottom();
+    setTimeout(scrollAiToBottom, 10);
   }, [aiMessages, aiThinking, showAi]);
 
   function sendChat() {
@@ -102,7 +102,7 @@ export function CommsPanel({
         <div className="comms-header-right">
           <button
             type="button"
-            className="ai-toggle-pill"
+            className="ai-toggle-pill tour-chat-ai"
             onClick={() => onSelectTab(showChat ? "ai" : "chat")}
           >
             {showChat ? (
@@ -189,7 +189,7 @@ export function CommsPanel({
             <div className="sticker-picker-wrap">
               <button
                 type="button"
-                className="chat-tool-btn-cyber"
+                className="chat-tool-btn-cyber tour-chat-attachment"
                 disabled={!permissions.canChat}
                 onClick={() => setShowStickers((current) => !current)}
                 aria-label="Open stickers"
@@ -214,13 +214,20 @@ export function CommsPanel({
                 </div>
               )}
             </div>
-            <input
+            <textarea
               disabled={!permissions.canChat}
               value={chatText}
               onChange={(event) => setChatText(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && sendChat()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  sendChat();
+                }
+              }}
               onFocus={onClearNotifications}
               placeholder={permissions.canChat ? "Type a message..." : "Chat disabled"}
+              rows={1}
+              style={{ resize: "none", overflowY: "auto" }}
             />
             <button
               className="chat-send-btn-cyber"
@@ -239,7 +246,7 @@ export function CommsPanel({
           <div className="messages messages--assistant" ref={aiScrollRef} style={{ flex: 1, overflowY: "auto", padding: "8px 4px" }}>
             {aiMessages.length === 0 && (
               <div className="assistant-empty" style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)" }}>
-                <Sparkles size={24} style={{ color: "#f97316", marginBottom: "12px" }} />
+                <Sparkles size={24} style={{ color: "var(--primary-color)", marginBottom: "12px" }} />
                 <p style={{ margin: 0, fontSize: "0.85rem" }}>Ask the assistant anything about your code, logic, or errors.</p>
               </div>
             )}
@@ -247,7 +254,7 @@ export function CommsPanel({
             {aiMessages.map((message) => (
               <div key={message.id} className={`ai-message ${message.role === "user" ? "ai-message--user" : "ai-message--assistant"}`} style={{ marginBottom: "12px" }}>
                 <div className="chat-sender-row" style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                  <div className="chat-avatar" style={{ background: message.role === "user" ? "rgba(249, 115, 22, 0.2)" : "rgba(0, 150, 255, 0.2)", borderColor: message.role === "user" ? "rgba(249, 115, 22, 0.4)" : "rgba(0, 150, 255, 0.4)" }}>
+                  <div className="chat-avatar" style={{ background: message.role === "user" ? "rgba(var(--primary-rgb), 0.2)" : "rgba(0, 150, 255, 0.2)", borderColor: message.role === "user" ? "rgba(var(--primary-rgb), 0.4)" : "rgba(0, 150, 255, 0.4)" }}>
                     {message.role === "user" ? "U" : "AI"}
                   </div>
                   <span style={{ fontSize: "0.72rem", fontWeight: 700, color: message.role === "user" ? "#ff9f43" : "#8be9fd", textTransform: "uppercase" }}>
@@ -276,12 +283,19 @@ export function CommsPanel({
             <div className="chat-tool-btn-cyber" style={{ opacity: 0.5 }}>
               <Sparkles size={16} />
             </div>
-            <input
+            <textarea
               disabled={!permissions.canUseAi}
               value={aiPrompt}
               onChange={(event) => setAiPrompt(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && askAi()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  askAi();
+                }
+              }}
               placeholder={permissions.canUseAi ? "Ask AI a coding doubt..." : "Chat only"}
+              rows={1}
+              style={{ resize: "none", overflowY: "auto" }}
             />
             <button
               className="chat-send-btn-cyber"

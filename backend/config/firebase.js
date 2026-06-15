@@ -26,6 +26,7 @@ function createMockFirestore() {
     return chainObj;
   };
   return {
+    isMock: true,
     collection: mockCollection,
     doc: () => ({
       set: async () => {},

@@ -196,8 +196,8 @@ export default function FeedbackPage() {
           transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .star-btn-lg:hover { transform: scale(1.15); color: #444; }
-        .star-btn-lg.active { color: #FF7A18; filter: drop-shadow(0 0 12px rgba(255, 122, 24, 0.3)); }
-        .rating-desc { margin-top: 12px; font-size: 0.9rem; color: #FF7A18; font-weight: 500; }
+        .star-btn-lg.active { color: var(--primary-color); filter: drop-shadow(0 0 12px rgba(var(--primary-rgb), 0.3)); }
+        .rating-desc { margin-top: 12px; font-size: 0.9rem; color: var(--primary-color); font-weight: 500; }
 
         .input-field { display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px; }
         .input-field label { color: #aaa; font-size: 0.95rem; }
@@ -206,16 +206,16 @@ export default function FeedbackPage() {
           padding: 20px; color: #eee; min-height: 200px; resize: none; font-size: 1rem;
           transition: all 0.2s;
         }
-        .input-field textarea:focus { border-color: #FF7A18; background: #1a1a1a; outline: none; }
+        .input-field textarea:focus { border-color: var(--primary-color); background: #1a1a1a; outline: none; }
         .field-footer { display: flex; justify-content: space-between; font-size: 0.8rem; color: #444; }
 
         .submit-btn-full {
-          width: 100%; padding: 18px; background: #FF7A18; color: white;
+          width: 100%; padding: 18px; background: var(--primary-color); color: white;
           border: none; border-radius: 16px; font-weight: 700; font-size: 1.1rem;
           display: flex; align-items: center; justify-content: center; gap: 12px;
           cursor: pointer; transition: all 0.3s;
         }
-        .submit-btn-full:hover:not(:disabled) { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(255, 122, 24, 0.2); }
+        .submit-btn-full:hover:not(:disabled) { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(var(--primary-rgb), 0.2); }
         .submit-btn-full:disabled { opacity: 0.3; cursor: not-allowed; }
 
         .info-sidebar { display: flex; flex-direction: column; gap: 24px; }
@@ -227,7 +227,7 @@ export default function FeedbackPage() {
           width: 44px; height: 44px; border-radius: 12px;
           display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
-        .info-icon.orange { background: rgba(255, 122, 24, 0.1); color: #FF7A18; }
+        .info-icon.orange { background: rgba(var(--primary-rgb), 0.1); color: var(--primary-color); }
         .info-icon.red { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
         .info-icon.blue { background: rgba(0, 229, 255, 0.1); color: #00E5FF; }
         .info-item h4 { margin: 0 0 4px 0; color: #fff; }

@@ -29,6 +29,7 @@ export function RoomsPage() {
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("Newest First");
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -51,7 +52,13 @@ export function RoomsPage() {
   useEffect(() => {
     api.listRooms().then(setRooms).catch(console.error);
     socket.connect();
-    socket.on("rooms:update", setRooms);
+    
+    const handleRoomsUpdate = (data) => {
+      console.log("[RoomsPage] Received rooms:update", data?.length);
+      setRooms(data || []);
+    };
+    
+    socket.on("rooms:update", handleRoomsUpdate);
     
     // Handle messages from redirection (like being kicked)
     const params = new URLSearchParams(location.search);
@@ -78,7 +85,7 @@ export function RoomsPage() {
       navigate(location.pathname + (newSearch ? `?${newSearch}` : ""), { replace: true });
     }
 
-    return () => socket.off("rooms:update", setRooms);
+    return () => socket.off("rooms:update", handleRoomsUpdate);
   }, [location.search, navigate]);
 
   const isRoomsPage = location.pathname !== "/problems";
@@ -170,7 +177,8 @@ export function RoomsPage() {
           height: '100%',
           objectFit: 'cover',
           zIndex: 0,
-          opacity: 1
+          opacity: 1,
+          filter: 'var(--home-video-filter)'
         }}
       >
         <source src={bg1} type="video/mp4" />
@@ -206,23 +214,34 @@ export function RoomsPage() {
                 <SearchIcon size={16} />
                 <input placeholder="Search by room name or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               </label>
-              <select className="rooms-sort-select">
-                <option>Newest First</option>
-                <option>Most Popular</option>
-                <option>Least Full</option>
+              <select className="rooms-sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="Newest First">Newest First</option>
+                <option value="Most Popular">Most Popular</option>
+                <option value="Least Full">Least Full</option>
               </select>
-              <button className="button button-primary" onClick={() => setShowCreateModal(true)} style={{ backgroundColor: '#FF7F3F', borderColor: '#FF7F3F', color: '#fff' }}>
+              <button className="button button-primary tour-create-room" onClick={() => setShowCreateModal(true)} style={{ backgroundColor: 'var(--primary-color)', borderColor: 'var(--primary-color)', color: '#fff' }}>
                 <Plus size={18} /> Create Room
               </button>
             </div>
           </div>
 
-          <div className="rooms-list">
+          <div className="rooms-list tour-rooms-list" style={{ minHeight: '300px' }}>
             {(() => {
               const filtered = rooms.filter((room) => {
                 const term = searchTerm.trim().toLowerCase();
                 if (!term) return true;
                 return room.name.toLowerCase().includes(term) || String(room.id || "").toLowerCase().includes(term);
+              });
+              
+              filtered.sort((a, b) => {
+                if (sortBy === "Most Popular") {
+                  return (b.users || 0) - (a.users || 0);
+                } else if (sortBy === "Least Full") {
+                  return (a.users || 0) - (b.users || 0);
+                } else {
+                  // Newest First
+                  return (b.createdAt || 0) - (a.createdAt || 0); 
+                }
               });
 
               if (filtered.length === 0) {
@@ -290,63 +309,6 @@ export function RoomsPage() {
         </section>
       </section>
 
-      <footer className="rooms-footer">
-        <div className="rooms-footer-content">
-          <div className="rooms-footer-brand">
-            <BrandButton logo />
-            <p>The real-time competitive coding platform for developers to learn, compete and grow together.</p>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Platform</h4>
-            <ul>
-              <li><a href="#">Rooms</a></li>
-              <li><a href="#">Problems</a></li>
-              <li><a href="#">Battles</a></li>
-              <li><a href="#">Contests</a></li>
-              <li><a href="#">Leaderboard</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Resources</h4>
-            <ul>
-              <li><a href="#">Blog</a></li>
-              <li><a href="#">Docs</a></li>
-              <li><a href="#">Guides</a></li>
-              <li><a href="#">API</a></li>
-              <li><a href="#">Changelog</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Community</h4>
-            <ul>
-              <li><a href="#">Discussions</a></li>
-              <li><a href="#">Events</a></li>
-              <li><a href="#">Top Users</a></li>
-              <li><a href="#">Hall of Fame</a></li>
-              <li><a href="#">Support</a></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Legal</h4>
-            <ul>
-              <li><a href="#">Privacy Policy</a></li>
-              <li><a href="#">Terms of Service</a></li>
-              <li><a href="#">Code of Conduct</a></li>
-            </ul>
-          </div>
-
-        </div>
-
-        <div className="rooms-footer-bottom">
-          <p>&copy; 2024 Codefora. All rights reserved.</p>
-          <p>Made with <span style={{color: 'var(--primary)'}}>❤️</span> for developers</p>
-        </div>
-      </footer>
-
       {showCreateModal && (
         <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Create a room">
           <form className="profile-modal-card" onSubmit={(e) => { e.preventDefault(); createRoom(); }}>
@@ -354,7 +316,7 @@ export function RoomsPage() {
               <h3>Create a New Room</h3>
             </div>
             
-            <label className="profile-input-group">
+            <label className="profile-input-group tour-room-name">
               Room Name
               <input
                 autoFocus
@@ -364,21 +326,19 @@ export function RoomsPage() {
               />
             </label>
 
-            <label className="profile-input-group">
+            <label className="profile-input-group tour-room-size">
               Room Size (Members)
-              <select value={maxMembers} onChange={(e) => setMaxMembers(e.target.value ? Number(e.target.value) : "")}>
-                <option value="">Select room size</option>
-                <option value="1">1 Member</option>
-                <option value="2">2 Members</option>
-                <option value="3">3 Members</option>
-                <option value="4">4 Members</option>
-                <option value="5">5 Members</option>
+              <select value={maxMembers} onChange={(e) => setMaxMembers(e.target.value)} required>
+                <option value="" disabled>Select max size</option>
+                {[1, 2, 3, 4, 5, 6, 7].map(num => (
+                  <option key={num} value={num}>{num} {num === 1 ? 'Member' : 'Members'}</option>
+                ))}
               </select>
             </label>
 
             <label className="profile-input-group">
               Room Mode
-              <div className="room-mode-toggle" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "8px" }}>
+              <div className="room-mode-toggle tour-room-mode" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "8px" }}>
                 <button
                   type="button"
                   style={{

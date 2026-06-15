@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Headphones, Mic, MicOff, MoreVertical, Shield, UserX, MessageSquare } from "lucide-react";
+import { Check, Headphones, Mic, MicOff, MoreVertical, Shield, UserX, MessageSquare, Volume2 } from "lucide-react";
 import { getInviteCode } from "../../lib/navigation";
 import { API_URL } from "../../config";
 
@@ -33,7 +33,7 @@ export function UsersPanel({
 
   return (
     <aside 
-      className="side-panel users-panel" 
+      className="side-panel users-panel tour-users-panel" 
       style={{ 
         display: "flex", 
         flexDirection: "column", 
@@ -70,7 +70,7 @@ export function UsersPanel({
           gap: "4px", 
           flex: 1, 
           overflowY: "auto",
-          flexShrink: 0
+          minHeight: 0
         }}
       >
         {users.map((user) => (
@@ -79,10 +79,11 @@ export function UsersPanel({
             key={user.socketId}
             style={{
               background: "#121822",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
+              border: `1px solid ${user.color || "rgba(255, 255, 255, 0.05)"}`,
+              boxShadow: `0 0 15px ${user.color}20`,
               borderRadius: "12px",
               position: "relative",
-              marginBottom: "4px",
+              marginBottom: "8px",
               padding: "10px"
             }}
           >
@@ -211,43 +212,94 @@ export function UsersPanel({
               </div>
 
               {/* Column 2: User Info (Name, Role, Status & Mic, Typing Status) */}
-              <div className="user-info" style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0, paddingRight: "18px" }}>
-                <strong style={{ fontSize: "14px", fontWeight: "bold", color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {user.name}
-                </strong>
-                <small style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", textTransform: "uppercase", fontWeight: "600" }}>
-                  {user.role}
-                </small>
-                {/* Status dot & Mic Info directly below the role line */}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#10b981" }} title="Online" />
-                  <span className={`mic-status-icon ${user.mic ? "on" : "off"}`} style={{ display: "flex", alignItems: "center" }}>
-                    {user.mic ? <Mic size={13} style={{ color: "var(--primary-orange)" }} /> : <MicOff size={13} style={{ opacity: 0.4 }} />}
-                  </span>
+              <div className="user-info" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "14px", fontWeight: "600", color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {user.name}
+                    </span>
+                    {user.speaking && <Volume2 size={14} color="#50FA7B" className="speaking-icon" />}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--text-secondary)", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      {user.role}
+                    </span>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981", marginTop: "2px" }} />
+                      {user.mic === false && <MicOff size={10} color="#ef4444" />}
+                    </div>
+                  </div>
+                  {user.isTyping && user.currentFile && (
+                    <span style={{ fontSize: "10px", color: "var(--primary-orange)", fontWeight: "500", marginTop: "4px", wordBreak: "break-all" }}>
+                      typing in {user.currentFile}
+                    </span>
+                  )}
                 </div>
-                {user.isTyping && user.currentFile && (
-                  <span style={{ fontSize: "10px", color: "var(--primary-orange)", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: "4px" }}>
-                    typing in {user.currentFile}...
-                  </span>
-                )}
-              </div>
             </div>
 
             {/* Profile Expansion */}
-            {expandedUser === user.socketId && user.bio && (
+            {expandedUser === user.socketId && (
               <div className="user-profile-expansion" style={{
                 padding: "8px 0 0 0",
-                marginTop: "4px",
-                borderTop: "1px solid rgba(255,255,255,0.03)"
+                marginTop: "8px",
+                borderTop: "1px solid rgba(255,255,255,0.05)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px"
               }}>
                 <div style={{
-                  padding: "6px",
-                  background: "rgba(0,0,0,0.2)",
-                  borderRadius: "4px",
+                  padding: "8px",
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: "6px",
                   border: "1px solid rgba(255,255,255,0.05)"
                 }}>
-                  <p style={{ margin: 0, fontSize: "10px", color: "#ddd", lineHeight: "1.3" }}>{user.bio}</p>
+                  {user.userId && (
+                    <div style={{ fontSize: "9px", fontFamily: "monospace", color: "var(--primary-orange)", marginBottom: "4px" }}>
+                      ID: {(() => {
+                        let hash = 0;
+                        for (let i = 0; i < user.userId.length; i++) hash = Math.imul(31, hash) + user.userId.charCodeAt(i) | 0;
+                        return Math.abs(hash).toString().padStart(8, '0').slice(0, 8);
+                      })()}
+                    </div>
+                  )}
+                  <p style={{ margin: 0, fontSize: "11px", color: "#ccc", lineHeight: "1.4" }}>
+                    {user.bio || "No bio provided."}
+                  </p>
                 </div>
+                {user.userId && user.socketId !== permissions.me?.socketId && (
+                  <button 
+                    style={{
+                      background: "rgba(239, 68, 68, 0.1)",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      color: "#ef4444",
+                      padding: "6px",
+                      borderRadius: "6px",
+                      fontSize: "10px",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "4px"
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fetch(API_URL + "/api/feedback", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ 
+                          type: "report", 
+                          message: `User Abuse Report`,
+                          reportedId: user.userId || user.socketId,
+                          reportedName: user.name,
+                          reporterId: localStorage.getItem("userId") || "Unknown",
+                          reporterName: localStorage.getItem("username") || "Anonymous"
+                        })
+                      }).then(() => alert("User reported to admin.")).catch(console.error);
+                    }}
+                  >
+                    <Shield size={12} /> Report User
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -259,7 +311,7 @@ export function UsersPanel({
         style={{ 
           margin: "0 16px 16px", 
           padding: "16px", 
-          border: "1px solid rgba(249, 115, 22, 0.4)", 
+          border: "1px solid rgba(var(--primary-rgb), 0.4)", 
           background: "transparent", 
           borderRadius: "12px", 
           display: "flex", 

@@ -40,7 +40,7 @@ export class RoomService {
       hostToken: cryptoId() + cryptoId(),
       inviteCode,
       problemId: problemId || null,
-      max: Math.min(Number(max) || 5, 5),
+      max: Math.min(Number(max) || 7, 7),
       createdAt: Date.now()
     };
   }
@@ -51,18 +51,22 @@ export class RoomService {
       name: room.name,
       visibility: room.visibility,
       users: room.users.length,
-      max: room.max || 6,
+      max: room.max || 7,
       hostName: room.hostName || "Host",
       status: room.users.length > 0 ? "active" : "idle",
       usersList: (room.users || []).slice(0, 6),
       lang: room.files.find((file) => file.name.endsWith(".js"))?.language || "mixed",
-      problemId: room.problemId || null
+      problemId: room.problemId || null,
+      createdAt: room.createdAt || Date.now()
     };
   }
 
   snapshot(room) {
     return {
       ...this.publicRoom(room),
+      allowAi: room.allowAi !== false,
+      allowCopyPaste: room.allowCopyPaste !== false,
+      inviteCode: room.inviteCode,
       files: room.files,
       messages: room.messages.slice(-50),
       usersList: room.users,
@@ -93,7 +97,10 @@ export class RoomService {
 
   addFile(room, fileName, language, code) {
     const cleanName = fileName.trim().replace(/[\\/]/g, "");
-    if (!cleanName || room.files.some((file) => file.name === cleanName) || room.files.length >= 8) return false;
+    if (!cleanName || room.files.some((file) => file.name === cleanName) || room.files.length >= 8) {
+      console.log(`[RoomService] addFile REJECTED: cleanName='${cleanName}', exists=${room.files.some((file) => file.name === cleanName)}, length=${room.files.length}`);
+      return false;
+    }
     room.files.push({ 
       name: cleanName, 
       language: String(language || "").trim() || languageFromName(cleanName), 

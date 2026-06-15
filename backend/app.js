@@ -5,7 +5,6 @@ import { createExecutionController } from "./controllers/executionController.js"
 import { createRoomController } from "./controllers/roomController.js";
 import { getEmotions, getEmotionImage, initEmotions } from "./controllers/emotionController.js";
 import { createProfileController } from "./controllers/profileController.js";
-import { createAccountController } from "./controllers/accountController.js";
 import { createCompilerController } from "./controllers/compilerController.js";
 import { createAdminController } from "./controllers/adminController.js";
 import { createProblemController } from "./controllers/problemController.js";
@@ -22,7 +21,6 @@ export function createApp({ roomRepository, roomService, profileController, onRo
   const executionController = createExecutionController(new ExecutionService());
   const aiController = createAiController(new AiService());
   const emotionController = { getEmotions, getEmotionImage, initEmotions };
-  const accountController = createAccountController();
   const compilerController = createCompilerController(new PistonService());
   const adminController = createAdminController(roomRepository);
   const problemController = createProblemController();
@@ -63,7 +61,6 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     aiController, 
     emotionController, 
     profileController, 
-    accountController, 
     compilerController,
     adminController,
     problemController,

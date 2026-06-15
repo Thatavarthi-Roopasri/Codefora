@@ -134,13 +134,16 @@ export default function AdminDashboardPage() {
 
 
 
-  const reports = [
-    { type: 'Toxic Bio', user: 'bad_user_01', reason: 'Inappropriate bio', time: '5m ago' },
-    { type: 'Spam Room', user: 'spam_room_77', reason: 'Spamming links', time: '12m ago' },
-    { type: 'Toxic Username', user: 'noob_king_$$', reason: 'Offensive name', time: '18m ago' },
-    { type: 'Room Misuse', user: 'CF-90', reason: 'Rule violation', time: '21m ago' },
-    { type: 'Toxic Bio', user: 'abusive_user', reason: 'Harassment', time: '25m ago' },
-  ];
+  const reports = feedbackList.filter(f => f.type === 'report').map(f => ({
+    type: 'User Report',
+    reportedName: f.reportedName || f.username || 'Unknown',
+    reportedId: f.reportedId || 'No ID',
+    reporterName: f.reporterName || 'Unknown',
+    reporterId: f.reporterId || 'No ID',
+    reason: f.message || 'No reason provided',
+    time: f.timestamp ? new Date(f.timestamp).toLocaleString() : (f.createdAt ? new Date(f.createdAt).toLocaleString() : 'Just now'),
+    id: f.id
+  }));
 
   // The activityLog state is defined above, removing the static duplicate.
 
@@ -194,11 +197,11 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="admin-sidebar-section" style={{ marginTop: '20px' }}>
-            <div className="admin-sidebar-title" style={{ color: '#FF9100' }}>⚡ Quick Actions</div>
+            <div className="admin-sidebar-title" style={{ color: 'var(--primary-accent)' }}>⚡ Quick Actions</div>
             <button className="admin-nav-item" onClick={() => { setEditingProblem(null); setShowProblemForm(true); }} style={{ border: '1px solid rgba(139, 233, 253, 0.2)', color: '#8BE9FD', justifyContent: 'center' }}>
               + Add Problem
             </button>
-            <button className="admin-nav-item" style={{ border: '1px solid rgba(255, 145, 0, 0.2)', color: '#FF9100', justifyContent: 'center' }}>
+            <button className="admin-nav-item" style={{ border: '1px solid rgba(255, 145, 0, 0.2)', color: 'var(--primary-accent)', justifyContent: 'center' }}>
               + Create Room
             </button>
           </div>
@@ -260,7 +263,7 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div className="admin-test-cases-section">
-                    <h3 style={{ fontSize: '0.9rem', color: '#FF9100', margin: '15px 0 10px' }}>Test Cases (Judging)</h3>
+                    <h3 style={{ fontSize: '0.9rem', color: 'var(--primary-accent)', margin: '15px 0 10px' }}>Test Cases (Judging)</h3>
                     <div className="admin-test-case-row">
                       <div className="admin-setting-group">
                         <label className="admin-setting-label">Test Case 1 Input</label>
@@ -562,6 +565,7 @@ export default function AdminDashboardPage() {
                         <tr>
                           <th>Type</th>
                           <th>Reported User</th>
+                          <th>Reported By</th>
                           <th>Reason</th>
                           <th>Time</th>
                           <th>Actions</th>
@@ -569,10 +573,17 @@ export default function AdminDashboardPage() {
                       </thead>
                       <tbody>
                         {reports.map((r, i) => (
-                          <tr key={i}>
+                          <tr key={r.id || i}>
                             <td style={{ color: '#FF5555' }}>{r.type}</td>
-                            <td>{r.user}</td>
-                            <td>{r.reason}</td>
+                            <td>
+                              <div>{r.reportedName}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{r.reportedId}</div>
+                            </td>
+                            <td>
+                              <div>{r.reporterName}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{r.reporterId}</div>
+                            </td>
+                            <td title={r.reason}>{r.reason.length > 30 ? r.reason.substring(0, 30) + "..." : r.reason}</td>
                             <td>{r.time}</td>
                             <td>
                               <div className="admin-table-actions">
@@ -588,8 +599,8 @@ export default function AdminDashboardPage() {
                   </div>
                   {activeTab === 'Reports' && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', marginTop: '10px' }}>
-                      <span>Showing 5 of 68 reports</span>
-                      <button className="admin-link-button" style={{ color: '#FF9100' }}>Load More</button>
+                      <span>Showing {reports.length} reports</span>
+                      <button className="admin-link-button" style={{ color: 'var(--primary-accent)' }}>Load More</button>
                     </div>
                   )}
                 </div>
@@ -638,7 +649,7 @@ export default function AdminDashboardPage() {
                   
                   {activeTab === 'Dashboard' && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', marginTop: 'auto' }}>
-                      <button className="admin-link-button" style={{ color: '#FF9100' }} onClick={() => setActiveTab('Settings')}>View All Settings →</button>
+                      <button className="admin-link-button" style={{ color: 'var(--primary-accent)' }} onClick={() => setActiveTab('Settings')}>View All Settings →</button>
                     </div>
                   )}
                 </div>

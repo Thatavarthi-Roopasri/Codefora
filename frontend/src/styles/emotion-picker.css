@@ -1,5 +1,13 @@
 .emotion-picker-container {
   padding: 16px 4px;
+  --picker-color: var(--primary-color);
+  --picker-color-rgb: var(--primary-rgb);
+}
+
+.emotion-picker-container[data-theme="loop"],
+.emotion-picker-container[data-theme="loops"] {
+  --picker-color: #3b82f6;
+  --picker-color-rgb: 59, 130, 246;
 }
 
 .emotion-grid {
@@ -16,7 +24,7 @@
   width: 6px;
 }
 .emotion-grid::-webkit-scrollbar-thumb {
-  background: rgba(255, 122, 24, 0.3);
+  background: rgba(var(--primary-rgb), 0.3);
   border-radius: 10px;
 }
 
@@ -35,15 +43,15 @@
 }
 
 .emotion-item:hover {
-  background: rgba(255, 122, 24, 0.08);
-  border-color: rgba(255, 122, 24, 0.3);
+  background: rgba(var(--picker-color-rgb), 0.08);
+  border-color: rgba(var(--picker-color-rgb), 0.3);
   transform: translateY(-4px);
 }
 
 .emotion-item.selected {
-  background: rgba(255, 122, 24, 0.15);
-  border-color: var(--primary, #ff7a18);
-  box-shadow: 0 0 20px rgba(255, 122, 24, 0.1);
+  background: rgba(var(--picker-color-rgb), 0.15);
+  border-color: var(--picker-color);
+  box-shadow: 0 0 20px rgba(var(--picker-color-rgb), 0.1);
 }
 
 .emotion-image-wrapper {
@@ -83,9 +91,9 @@
   right: 8px;
   width: 8px;
   height: 8px;
-  background: var(--primary, #ff7a18);
+  background: var(--picker-color);
   border-radius: 50%;
-  box-shadow: 0 0 10px var(--primary, #ff7a18);
+  box-shadow: 0 0 10px var(--picker-color);
 }
 
 .emotion-picker-loading {

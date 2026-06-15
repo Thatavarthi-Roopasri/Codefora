@@ -10,6 +10,7 @@ import { UsersPanel } from "../components/room/UsersPanel";
 import { CommsPanel } from "../components/room/CommsPanel";
 import { ConsolePanel } from "../components/room/ConsolePanel";
 import { FloatingProblem } from "../components/room/FloatingProblem";
+import { ProblemPanel } from "../components/room/ProblemPanel";
 import { NotesModal } from "../components/room/NotesModal";
 import { TimeTravelModal } from "../components/room/TimeTravelModal";
 import { FooterBar } from "../components/room/FooterBar";
@@ -34,6 +35,11 @@ export function RoomPage() {
   const [showFloatingProblem, setShowFloatingProblem] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
+
+  // Tell TourManager when chat opens so it can dynamically inject chat-related tour steps!
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('chat-toggled', { detail: { isOpen: isChatOpen } }));
+  }, [isChatOpen]);
 
   const isBypassingBlocker = useRef(false);
 
@@ -71,11 +77,16 @@ export function RoomPage() {
   const [usersPanelWidth, setUsersPanelWidth] = useState(222);
   const [isResizing, setIsResizing] = useState(false);
   const [isResizingUsers, setIsResizingUsers] = useState(false);
+  const [consoleMode, setConsoleMode] = useState("output");
   const consoleResizeStart = useRef({ y: 0, height: 280 });
   const usersResizeStart = useRef({ x: 0, width: 222 });
 
   // --- Leave Room Navigation Blocker ---
   const [showLeavePrompt, setShowLeavePrompt] = useState(false);
+  const [showUsersModal, setShowUsersModal] = useState(false);
+  const [usersModalPos, setUsersModalPos] = useState({ x: 200, y: 100 });
+  const [isDraggingUsersModal, setIsDraggingUsersModal] = useState(false);
+  const usersModalDragStart = useRef({ x: 0, y: 0, initialX: 0, initialY: 0 });
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       !isBypassingBlocker.current && !showLeavePrompt && currentLocation.pathname !== nextLocation.pathname
@@ -146,6 +157,23 @@ export function RoomPage() {
   }, []);
   // -------------------------------------
 
+  // --- Anti-Cheat Copy/Paste Protection ---
+  useEffect(() => {
+    if (room?.allowCopyPaste === false) {
+      const handleCopyPaste = (e) => {
+        e.preventDefault();
+      };
+      document.addEventListener("copy", handleCopyPaste, { capture: true });
+      document.addEventListener("cut", handleCopyPaste, { capture: true });
+      document.addEventListener("paste", handleCopyPaste, { capture: true });
+      return () => {
+        document.removeEventListener("copy", handleCopyPaste, { capture: true });
+        document.removeEventListener("cut", handleCopyPaste, { capture: true });
+        document.removeEventListener("paste", handleCopyPaste, { capture: true });
+      };
+    }
+  }, [room?.allowCopyPaste]);
+
   const startResizing = (event) => {
     event?.preventDefault?.();
     consoleResizeStart.current = {
@@ -177,18 +205,38 @@ export function RoomPage() {
       const newWidth = usersResizeStart.current.width + delta;
       setUsersPanelWidth(Math.min(Math.max(newWidth, 150), 320));
     }
+
+    if (isDraggingUsersModal) {
+      setUsersModalPos({
+        x: usersModalDragStart.current.initialX + (e.clientX - usersModalDragStart.current.x),
+        y: usersModalDragStart.current.initialY + (e.clientY - usersModalDragStart.current.y)
+      });
+    }
   };
+
+  const handleUsersModalDragStart = (e) => {
+    setIsDraggingUsersModal(true);
+    usersModalDragStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      initialX: usersModalPos.x,
+      initialY: usersModalPos.y
+    };
+  };
+  const handleUsersModalDragEnd = () => setIsDraggingUsersModal(false);
 
   useEffect(() => {
     window.addEventListener("mousemove", resize);
     window.addEventListener("mouseup", stopResizing);
     window.addEventListener("mouseup", stopUsersResizing);
+    window.addEventListener("mouseup", handleUsersModalDragEnd);
     return () => {
       window.removeEventListener("mousemove", resize);
       window.removeEventListener("mouseup", stopResizing);
       window.removeEventListener("mouseup", stopUsersResizing);
+      window.removeEventListener("mouseup", handleUsersModalDragEnd);
     };
-  }, [isResizing, isResizingUsers]);
+  }, [isResizing, isResizingUsers, isDraggingUsersModal]);
 
   // Handle floating messages
   useEffect(() => {
@@ -219,11 +267,6 @@ export function RoomPage() {
     if (room && !infoShownRef.current) {
       setShowInfoModal(true);
       infoShownRef.current = true;
-      
-      // Auto-open problem if it exists
-      if (room.problemId) {
-        setShowFloatingProblem(true);
-      }
     }
   }, [room]);
 
@@ -264,6 +307,7 @@ export function RoomPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {(isResizing || isResizingUsers) && <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: isResizing ? 'row-resize' : 'col-resize' }} />}
       <div className="workspace layout-v2" style={{ flex: 1, height: 'auto' }}>
         <div ref={audioHost} style={{ display: "none" }} />
 
@@ -280,7 +324,7 @@ export function RoomPage() {
           onClose={() => setShowInfoModal(false)} 
         />
 
-        <TopBar
+        <TopBar 
           room={room}
           users={users}
           files={files}
@@ -291,10 +335,12 @@ export function RoomPage() {
           onMic={actions.toggleMic}
           actions={actions}
           onLeaveRequest={handleLeaveRequest}
-          onToggleProblem={() => setShowFloatingProblem(!showFloatingProblem)}
           onShowInfo={() => setShowInfoModal(true)}
           onShowNotes={() => setShowNotes(true)}
+          onShowProblem={() => setShowFloatingProblem(true)}
+          onShowUsersModal={() => setShowUsersModal(true)}
           timer={timer}
+          hasProblem={!!room.problemId}
         />
 
         <NotesModal 
@@ -331,14 +377,20 @@ export function RoomPage() {
           className={`workspace-main ${isResizingUsers ? "is-resizing-users" : ""}`}
           style={{ "--users-panel-width": `${usersPanelWidth}px` }}
         >
-          <UsersPanel
-            room={room}
-            roomId={resolvedRoomId}
-            users={users}
-            permissions={permissions}
-            onRoleChange={actions.updateRole}
-            onKickUser={actions.kickUser}
-          />
+          {room.problemId ? (
+            <div style={{ height: "100%", overflowY: "auto", borderRight: "1px solid var(--glass-border)", background: "rgba(0,0,0,0.2)" }}>
+              <ProblemPanel problem={activeProblem} />
+            </div>
+          ) : (
+            <UsersPanel
+              room={room}
+              roomId={resolvedRoomId}
+              users={users}
+              permissions={permissions}
+              onRoleChange={actions.updateRole}
+              onKickUser={actions.kickUser}
+            />
+          )}
           <button
             type="button"
             className="users-resize-handle"
@@ -351,6 +403,7 @@ export function RoomPage() {
           <div className="middle-column">
             <EditorPanel
               roomId={resolvedRoomId}
+              allowCopyPaste={room?.allowCopyPaste}
               files={files}
               activeFile={activeFile}
               activeName={activeName}
@@ -360,18 +413,32 @@ export function RoomPage() {
               typingCursors={typingCursors}
               permissions={permissions}
               onChange={actions.updateCode}
+              onUpdateFileCode={actions.updateFileCode}
               onCreateFile={actions.createFile}
+              onExpectActiveName={actions.setExpectedActiveName}
               onDeleteFile={actions.deleteActiveFile}
               onChangeLanguage={actions.changeFileLanguage}
               onSaveWork={actions.saveWork}
-              onRun={() => actions.runCode(stdin)}
+              onRun={() => {
+                if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
+                  if (activeFile.name.endsWith('.html')) {
+                    actions.setPreviewTarget(activeFile.name);
+                  }
+                  if (preview?.showPreview) {
+                    setConsoleMode("preview");
+                    return;
+                  }
+                }
+                setConsoleMode("output");
+                actions.runCode(stdin);
+              }}
               onSubmit={() => {
                 actions.submitCode(activeProblem);
                 setShowTimeTravel(true);
               }}
               isRunningCode={compiler.isRunningCode}
               isSubmittingCode={compiler.isSubmittingCode}
-              canSubmit={permissions.canEdit}
+              canSubmit={!!activeProblem && compiler.compilerStatus === "Ready"}
             />
             <ConsolePanel
               output={output}
@@ -386,7 +453,19 @@ export function RoomPage() {
               setRunFile={setRunFile}
               isRunningCode={compiler.isRunningCode}
               isSubmittingCode={compiler.isSubmittingCode}
+              panelMode={consoleMode}
+              setPanelMode={setConsoleMode}
               onRun={() => {
+                if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
+                  if (activeFile.name.endsWith('.html')) {
+                    actions.setPreviewTarget(activeFile.name);
+                  }
+                  if (preview?.showPreview) {
+                    setConsoleMode("preview");
+                    return;
+                  }
+                }
+                setConsoleMode("output");
                 actions.runCode(stdin);
               }}
               onSubmit={() => {
@@ -398,6 +477,55 @@ export function RoomPage() {
             />
           </div>
         </div>
+
+        {showUsersModal && room.problemId && (
+          <div 
+            style={{ 
+              position: "fixed", 
+              zIndex: 10000,
+              left: `${usersModalPos.x}px`,
+              top: `${usersModalPos.y}px`,
+              width: "300px", 
+              maxWidth: "90vw", 
+              maxHeight: "80vh", 
+              display: "flex", 
+              flexDirection: "column",
+              background: "#0f172a",
+              border: "1px solid var(--glass-border)",
+              borderRadius: "12px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+            }} 
+          >
+            <div 
+              style={{ 
+                marginBottom: "16px", display: "flex", justifyContent: "space-between", 
+                alignItems: "center", padding: "16px", cursor: "grab", 
+                borderBottom: "1px solid var(--glass-border)",
+                userSelect: "none"
+              }}
+              onMouseDown={handleUsersModalDragStart}
+            >
+              <h3 style={{ margin: 0, fontSize: "14px", color: "#fff" }}>Room Users</h3>
+              <button 
+                onMouseDown={(e) => e.stopPropagation()} 
+                onClick={() => setShowUsersModal(false)} 
+                style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0 }}
+              >
+                <X size={16}/>
+              </button>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "0", padding: "0 16px 16px 16px" }} onMouseDown={(e) => e.stopPropagation()}>
+              <UsersPanel
+                room={room}
+                roomId={resolvedRoomId}
+                users={users}
+                permissions={permissions}
+                onRoleChange={actions.updateRole}
+                onKickUser={actions.kickUser}
+              />
+            </div>
+          </div>
+        )}
 
         <CommsPanel
           messages={messages}
@@ -418,7 +546,7 @@ export function RoomPage() {
 
         <button
           type="button"
-          className="floating-chat-button"
+          className="floating-chat-button tour-chat-button"
           onClick={() => setIsChatOpen(!isChatOpen)}
           title="Toggle Chat & AI"
         >

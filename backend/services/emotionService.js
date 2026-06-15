@@ -79,8 +79,8 @@ export const initializeEmotionsInFirestore = async () => {
   try {
     console.log('🔄 Initializing emotions in Firestore...');
     const db = createFirestore();
-    if (!db) {
-      console.warn('⚠ Firestore database not available. Emotions will not be saved to database.');
+    if (!db || db.isMock) {
+      console.log('No real Firestore available. Using local emotions.');
       return false;
     }
 

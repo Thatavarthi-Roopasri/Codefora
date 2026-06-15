@@ -176,13 +176,13 @@ export default function FeedbackModal({ isOpen, onClose, username, type = 'gener
           resize: vertical;
           font-family: inherit;
         }
-        .textarea-group textarea:focus { border-color: #FF7A18; outline: none; }
+        .textarea-group textarea:focus { border-color: var(--primary-color); outline: none; }
         .char-count { align-self: flex-end; font-size: 0.75rem; color: #555; }
         
         .submit-btn {
           width: 100%;
           padding: 14px;
-          background: #FF7A18;
+          background: var(--primary-color);
           color: white;
           border: none;
           border-radius: 12px;

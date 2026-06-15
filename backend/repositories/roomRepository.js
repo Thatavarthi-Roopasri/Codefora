@@ -89,6 +89,37 @@ export class RoomRepository {
     return [...this.rooms.values()].find((room) => normalizeInvite(room.inviteCode) === normalized);
   }
 
+  async fetchById(id) {
+    const memRoom = this.findById(id);
+    if (memRoom) return memRoom;
+    if (!this.firestore) return undefined;
+    const doc = await this.firestore.collection("rooms").doc(String(id || "").trim()).get();
+    if (doc.exists) {
+      const data = doc.data();
+      const room = { id: doc.id, ...data, users: [] };
+      this.rooms.set(room.id, room);
+      return room;
+    }
+    return undefined;
+  }
+
+  async fetchByInviteCode(inviteCode) {
+    const normalized = normalizeInvite(inviteCode);
+    if (!normalized) return undefined;
+    const memRoom = this.findByInviteCode(inviteCode);
+    if (memRoom) return memRoom;
+    if (!this.firestore) return undefined;
+    const snapshot = await this.firestore.collection("rooms").where("inviteCode", "==", normalized).limit(1).get();
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      const data = doc.data();
+      const room = { id: doc.id, ...data, users: [] };
+      this.rooms.set(room.id, room);
+      return room;
+    }
+    return undefined;
+  }
+
   async save(room) {
     let trimmedName = room.name?.trim() || "Untitled Lab";
     const duplicate = this.findByName(trimmedName);

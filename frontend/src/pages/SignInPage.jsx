@@ -1,27 +1,50 @@
 import { useNavigate, NavLink } from "react-router-dom";
-import { useState } from "react";
-import { logoutUser, signInWithGoogle } from "../lib/firebase";
+import { useState, useEffect } from "react";
+import { logoutUser, signInWithGoogle, auth } from "../lib/firebase";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, updateProfile, signOut } from "firebase/auth";
 import { saveUsername } from "../lib/navigation";
 import { api } from "../api/client";
 import { BrandButton } from "../components/BrandButton";
 import homevideo from "../../assets/homevideo.mp4";
+import { useAuth } from "../hooks/useAuth";
 
 export default function SignInPage() {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+  
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState("login");
-  const [authForm, setAuthForm] = useState({ username: "", password: "", confirmPassword: "" });
+  const [authForm, setAuthForm] = useState({ username: "", email: "", password: "", confirmPassword: "" });
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [showResend, setShowResend] = useState(false);
+
+  useEffect(() => {
+    if (!loading && user) {
+      const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user.email);
+      navigate(isAdmin ? '/admin' : '/home', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   async function handleGoogleSignIn() {
     try {
       const result = await signInWithGoogle();
       const account = result?.user;
+      
+      const role = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(account.email) ? "admin" : "user";
+      
       const displayName = account?.displayName || account?.email?.split("@")[0] || "Developer";
       saveUsername(displayName);
       if (account?.uid) localStorage.setItem("codefora_user_id", account.uid);
-      navigate('/home');
+      if (role === "admin") {
+        localStorage.setItem("codefora_role", "admin");
+        localStorage.setItem("codefora_admin_token", "firebase_master_admin");
+        navigate('/admin');
+      } else {
+        localStorage.setItem("codefora_role", "user");
+        localStorage.removeItem("codefora_admin_token");
+        navigate('/home');
+      }
     } catch (err) {
       console.error('Google sign-in failed:', err);
       setAuthStatus("Google sign-in failed. Please try again.");
@@ -35,6 +58,8 @@ export default function SignInPage() {
       // ignore
     }
 
+    localStorage.setItem("codefora_community", "sider");
+    document.documentElement.dataset.community = "sider";
     saveUsername("Guest");
     navigate('/home');
   }
@@ -42,21 +67,71 @@ export default function SignInPage() {
   function updateAuthField(field, value) {
     setAuthForm((current) => ({ ...current, [field]: value }));
     setAuthStatus("");
+    setShowResend(false);
   }
 
   function finishManualAuth(account) {
     saveUsername(account.displayName || account.username);
     localStorage.setItem("codefora_user_id", account.userId);
-    if (account.role) localStorage.setItem("codefora_role", account.role);
-    if (account.token) localStorage.setItem("codefora_admin_token", account.token);
-
-    setAuthForm({ username: "", password: "", confirmPassword: "" });
-    setAuthStatus("");
-
-    if (account.role === "admin") {
-      navigate('/admin');
+    
+    const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(account.email);
+    if (isAdmin) {
+      localStorage.setItem("codefora_role", "admin");
+      localStorage.setItem("codefora_admin_token", "firebase_master_admin");
     } else {
-      navigate('/home');
+      localStorage.setItem("codefora_role", "user");
+      localStorage.removeItem("codefora_admin_token");
+    }
+
+    setAuthForm({ username: "", email: "", password: "", confirmPassword: "" });
+    setAuthStatus("");
+    setShowResend(false);
+
+    if (isAdmin) navigate('/admin');
+    else navigate('/home');
+  }
+
+  async function handleForgotPassword() {
+    if (!authForm.email) {
+      setAuthStatus("Please enter your email to reset password.");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthStatus("");
+    setShowResend(false);
+    try {
+      await sendPasswordResetEmail(auth, authForm.email);
+      setAuthStatus("Password reset email sent! Please check your inbox (and spam folder).");
+    } catch (error) {
+      setAuthStatus(error.message || "Failed to send reset email.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!authForm.email || !authForm.password) {
+      setAuthStatus("Please enter your email and password to resend the verification link.");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthStatus("");
+    try {
+      // Sign them in temporarily just to get the user object to send the email
+      const userCredential = await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
+      await sendEmailVerification(userCredential.user);
+      await signOut(auth); // Sign them back out immediately
+      
+      setAuthStatus("A new verification email has been sent! Please check your inbox and spam folder.");
+      setShowResend(false);
+    } catch (error) {
+      if (error.code === 'auth/too-many-requests') {
+        setAuthStatus("Please wait a few minutes before requesting another email.");
+      } else {
+        setAuthStatus("Failed to resend email. Make sure your password is correct.");
+      }
+    } finally {
+      setAuthBusy(false);
     }
   }
 
@@ -71,14 +146,38 @@ export default function SignInPage() {
 
     setAuthBusy(true);
     setAuthStatus("");
+    setShowResend(false);
 
     try {
-      const account = authTab === "signup"
-        ? await api.signup(authForm)
-        : await api.login(authForm);
-      finishManualAuth(account);
+      if (authTab === "signup") {
+        const userCredential = await createUserWithEmailAndPassword(auth, authForm.email, authForm.password);
+        await updateProfile(userCredential.user, { displayName: authForm.username });
+        await sendEmailVerification(userCredential.user);
+        
+        setAuthStatus("Account created successfully! IMPORTANT: Please check your email inbox AND YOUR SPAM FOLDER to verify your account before logging in. If you don't verify, you cannot log in.");
+        await signOut(auth); // Force them to verify before actually getting access
+        setAuthTab("login");
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, authForm.email, authForm.password);
+        if (!userCredential.user.emailVerified) {
+          setAuthStatus("Please verify your email address before logging in. Check your inbox and spam folder.");
+          setShowResend(true);
+          await signOut(auth);
+          setAuthBusy(false);
+          return;
+        }
+        
+        finishManualAuth({
+          userId: userCredential.user.uid,
+          displayName: userCredential.user.displayName,
+          email: userCredential.user.email
+        });
+      }
     } catch (error) {
-      setAuthStatus(error.message || "Authentication failed.");
+      if (error.code === 'auth/email-already-in-use') setAuthStatus("This email is already registered.");
+      else if (error.code === 'auth/invalid-credential') setAuthStatus("Invalid email or password.");
+      else if (error.code === 'auth/weak-password') setAuthStatus("Password should be at least 6 characters.");
+      else setAuthStatus(error.message || "Authentication failed.");
     } finally {
       setAuthBusy(false);
     }
@@ -128,7 +227,7 @@ export default function SignInPage() {
               }}></span>
               <span style={{
                 fontWeight: '800', letterSpacing: '2px', textTransform: 'uppercase', fontSize: '0.85rem',
-                background: 'linear-gradient(90deg, #00E5FF, #FF9100)',
+                background: 'linear-gradient(90deg, #00E5FF, var(--primary-accent))',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent'
               }}>
@@ -146,7 +245,7 @@ export default function SignInPage() {
               <span style={{ color: 'white', textShadow: '0 10px 40px rgba(0,0,0,0.8)', display: 'inline-block' }}>Code. Collab.</span>
               <br />
               <span style={{
-                background: 'linear-gradient(90deg, #00E5FF, #FF9100)',
+                background: 'linear-gradient(90deg, #00E5FF, var(--primary-accent))',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 display: 'inline-block',
@@ -253,11 +352,22 @@ export default function SignInPage() {
               </h2>
 
               <div className="auth-modal-fields" style={{ gap: '15px' }}>
+                {authTab === "signup" && (
+                  <input
+                    type="text"
+                    value={authForm.username}
+                    onChange={(event) => updateAuthField("username", event.target.value)}
+                    placeholder="Username"
+                    className="glass-panel"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                    required
+                  />
+                )}
                 <input
-                  type="text"
-                  value={authForm.username}
-                  onChange={(event) => updateAuthField("username", event.target.value)}
-                  placeholder="Username"
+                  type="email"
+                  value={authForm.email}
+                  onChange={(event) => updateAuthField("email", event.target.value)}
+                  placeholder="Email Address"
                   className="glass-panel"
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
                   required
@@ -284,7 +394,23 @@ export default function SignInPage() {
                 )}
               </div>
 
-              {authStatus && <p className="auth-modal-status" style={{ color: '#ff4b2b', textAlign: 'center', marginTop: '15px' }}>{authStatus}</p>}
+              {authStatus && <p className="auth-modal-status" style={{ color: '#00E5FF', textAlign: 'center', marginTop: '15px', padding: '10px', background: 'rgba(0, 229, 255, 0.1)', borderRadius: '8px', border: '1px solid rgba(0, 229, 255, 0.2)' }}>{authStatus}</p>}
+
+              {showResend && (
+                <div style={{ textAlign: 'center', marginTop: '10px' }}>
+                  <button type="button" onClick={handleResendVerification} disabled={authBusy} style={{ background: 'none', border: 'none', color: '#00E5FF', fontSize: '0.9rem', cursor: 'pointer', textDecoration: 'underline', fontWeight: 'bold' }}>
+                    Didn't receive it? Click here to resend.
+                  </button>
+                </div>
+              )}
+
+              {authTab === "login" && !showResend && (
+                <div style={{ textAlign: 'right', marginTop: '10px' }}>
+                  <button type="button" onClick={handleForgotPassword} style={{ background: 'none', border: 'none', color: 'var(--primary-accent)', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline' }}>
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
 
               <button className="btn-modern primary" type="submit" disabled={authBusy} style={{ width: '100%', marginTop: '30px', justifyContent: 'center' }}>
                 {authBusy ? "Processing..." : authTab === "signup" ? "Create Account" : "Sign In"}

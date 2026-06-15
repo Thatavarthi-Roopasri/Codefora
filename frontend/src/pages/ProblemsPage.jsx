@@ -58,6 +58,7 @@ export function ProblemsPage() {
   const [problemAiMessages, setProblemAiMessages] = useState([]);
 
   const [problems, setProblems] = useState([]);
+  const [solvedProblems, setSolvedProblems] = useState([]);
   const [loadingProblems, setLoadingProblems] = useState(true);
   const [error, setError] = useState(null);
 
@@ -84,12 +85,27 @@ export function ProblemsPage() {
         setLoadingProblems(false);
       }
     }
+    
+    async function loadProfileStats() {
+      if (!user?.uid) return;
+      try {
+        const profile = await api.getProfile(user.uid);
+        if (profile?.solvedProblems) {
+          setSolvedProblems(profile.solvedProblems);
+        }
+      } catch (e) {
+        console.warn("Failed to load user stats", e);
+      }
+    }
+    
     loadProblems();
-  }, []);
+    loadProfileStats();
+  }, [user?.uid]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-  }, [selectedProblemId]);
+    window.dispatchEvent(new Event('tour-view-changed'));
+  }, [selectedProblemId, showRoomModal]);
 
   const filteredProblems = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -103,7 +119,7 @@ export function ProblemsPage() {
       .sort((a, b) => {
         if (sortBy === "Difficulty") return difficultyWeights[a.difficulty] - difficultyWeights[b.difficulty];
         if (sortBy === "Most Solved") return b.acceptance - a.acceptance;
-        if (sortBy === "Newest") return b.id.localeCompare(a.id);
+        if (sortBy === "Newest") return 0;
         return b.acceptance - a.acceptance;
       });
   }, [problems, search, selectedDifficulty, selectedTags, sortBy]);
@@ -185,18 +201,18 @@ export function ProblemsPage() {
       if (passedCount === totalCount) {
         setJudgeStatus("accepted");
         setRunOutput(`Accepted! All ${totalCount}/${totalCount} test cases passed.`);
+        if (user?.uid && !solvedProblems.includes(selectedProblem.id)) {
+          api.solveProblem(user.uid, selectedProblem.id).then(() => {
+            setSolvedProblems(prev => [...prev, selectedProblem.id]);
+          }).catch(console.warn);
+        }
       } else {
         setJudgeStatus("wrong");
         setFailedTestCase(firstFailed);
 
         const failedIndex = results.indexOf(firstFailed);
-        const isSampleFailed = failedIndex < 3;
-
-        if (isSampleFailed) {
-          setRunOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed. (Sample test case ${failedIndex + 1} failed).`);
-        } else {
-          setRunOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed. (hidden test case failed).`);
-        }
+        
+        setRunOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed. (Test case ${failedIndex + 1} failed).`);
       }
     } catch (error) {
       setJudgeStatus("wrong");
@@ -303,18 +319,18 @@ export function ProblemsPage() {
   }
 
   return (
-    <main className="page-shell problems-shell problem-code-shell">
+    <main className="problems-shell problem-code-shell" style={{ width: "100%" }}>
       <Navbar />
 
       {!selectedProblem ? (
         <section className="problems-overview-layout">
           <aside className="problem-list-panel problems-overview-filters">
-            <div className="problems-search-shell compact-search">
+            <div className="problems-search-shell compact-search tour-problems-search">
               <Search size={16} />
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search problems..." />
             </div>
 
-            <div className="filter-group">
+            <div className="filter-group tour-problems-difficulty">
               <span className="filter-label">Difficulty</span>
               <div className="filter-pills">
                 {["All", ...difficulties].map((difficulty) => (
@@ -330,7 +346,7 @@ export function ProblemsPage() {
               </div>
             </div>
 
-            <div className="filter-group">
+            <div className="filter-group tour-problems-tags">
               <span className="filter-label">Tags</span>
               <div className="filter-pills filter-pills--wrap">
                 {allTags.map((tag) => (
@@ -346,7 +362,7 @@ export function ProblemsPage() {
               </div>
             </div>
 
-            <label className="sort-mini">
+            <label className="sort-mini tour-problems-sort">
               Sort by
               <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
                 {sortOptions.map((option) => <option key={option}>{option}</option>)}
@@ -363,7 +379,7 @@ export function ProblemsPage() {
               <strong>{filteredProblems.length} problems</strong>
             </div>
 
-            <div className="problems-overview-grid">
+            <div className="problems-overview-grid tour-problems-list">
               {loadingProblems ? (
                 <div className="problems-empty-state">
                   <Loader2 className="animate-spin" size={48} />
@@ -385,7 +401,7 @@ export function ProblemsPage() {
                   <button
                     type="button"
                     key={problem.id}
-                    className="problem-overview-card"
+                    className="problem-overview-card tour-problem-card"
                     onClick={() => {
                       setSelectedProblemId(problem.id);
                       trackEvent("problem_open", { problem_id: problem.id, title: problem.title });
@@ -395,7 +411,10 @@ export function ProblemsPage() {
                   >
                     <div className="problem-overview-card__top">
                       <span>#{String(index + 1).padStart(2, "0")}</span>
-                      <small className={`difficulty-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</small>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {solvedProblems.includes(problem.id) && <CheckCircle size={14} color="#4ade80" title="Solved" />}
+                        <small className={`difficulty-${problem.difficulty.toLowerCase()}`}>{problem.difficulty}</small>
+                      </div>
                     </div>
                     <h2>{problem.title}</h2>
                     <p>{problem.statement}</p>
@@ -414,7 +433,7 @@ export function ProblemsPage() {
         </section>
       ) : (
       <section className="problem-code-layout no-sidebar">
-        <section className="problem-info-panel">
+        <section className="problem-info-panel tour-problem-left">
           <div className="problem-info-scroll">
             <button
               type="button"
@@ -435,12 +454,12 @@ export function ProblemsPage() {
             </div>
 
             <button 
-              className="button button-primary collaborate-btn" 
+              className="button button-primary collaborate-btn tour-problem-collaborate" 
               onClick={() => {
                 setRoomName(`Problem Room: ${selectedProblem.title}`);
                 setShowRoomModal(true);
               }}
-              style={{ width: "100%", marginTop: "12px", marginBottom: "12px", backgroundColor: "#FF7F3F", borderColor: "#FF7F3F" }}
+              style={{ width: "100%", marginTop: "12px", marginBottom: "12px", backgroundColor: "var(--primary-color)", borderColor: "var(--primary-color)" }}
             >
               <Users size={18} style={{ marginRight: "8px" }} /> Collaborate & Solve
             </button>
@@ -465,7 +484,7 @@ export function ProblemsPage() {
 
             <section>
               <h2>Sample Test Cases</h2>
-              {selectedProblem.tests.map((test, index) => (
+              {selectedProblem.tests.slice(0, 4).map((test, index) => (
                 <article className="sample-case" key={`${selectedProblem.id}-${index}`}>
                   <h3>Sample {index + 1}</h3>
                   <div>
@@ -488,7 +507,7 @@ export function ProblemsPage() {
               <select className="run-file-select" value={selectedLanguage.file} onChange={() => {}} aria-label="Current file">
                 <option>{selectedLanguage.file}</option>
               </select>
-              <button className="button primary run-btn" onClick={handleCompile} disabled={isRunning}>
+              <button className="button primary run-btn tour-problem-run" onClick={handleCompile} disabled={isRunning}>
                 {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                 <span>Run Code</span>
               </button>
@@ -497,6 +516,7 @@ export function ProblemsPage() {
             <label className="language-picker">
               Language
               <select
+                className="tour-problem-lang"
                 value={language}
                 onChange={(event) => {
                   setLanguage(event.target.value);
@@ -531,7 +551,7 @@ export function ProblemsPage() {
           </div>
 
           <div className="problem-action-row">
-            <button className="button primary" onClick={handleSubmit} disabled={isRunning}>
+            <button className="button primary tour-problem-submit" onClick={handleSubmit} disabled={isRunning}>
               Submit
             </button>
           </div>
@@ -565,7 +585,7 @@ export function ProblemsPage() {
                     transition: "all 0.2s"
                   }}
                 >
-                  <span>{showFailedDetails ? "Hide Failed Test Case" : "🔍 Show Failed Test Case"}</span>
+                  <span>{showFailedDetails ? "Hide failed testcase" : "Show failed testcase"}</span>
                 </button>
 
                 {showFailedDetails && (
@@ -605,7 +625,7 @@ export function ProblemsPage() {
 
       <button
         type="button"
-        className="problem-ai-fab"
+        className="problem-ai-fab tour-problem-ai-chat"
         onClick={() => setProblemAiOpen(!problemAiOpen)}
         aria-label={problemAiOpen ? "Close problem AI assistant" : "Open problem AI assistant"}
       >
@@ -666,7 +686,7 @@ export function ProblemsPage() {
               <h3>Create Problem Room</h3>
             </div>
             
-            <label className="profile-input-group">
+            <label className="profile-input-group tour-room-name">
               Room Name
               <input
                 autoFocus
@@ -676,17 +696,19 @@ export function ProblemsPage() {
               />
             </label>
 
-            <label className="profile-input-group">
+            <label className="profile-input-group tour-room-size">
               Room Size (Members)
               <select value={maxMembers} onChange={(e) => setMaxMembers(Number(e.target.value))}>
                 <option value="2">2 Members</option>
                 <option value="3">3 Members</option>
                 <option value="4">4 Members</option>
                 <option value="5">5 Members</option>
+                <option value="6">6 Members</option>
+                <option value="7">7 Members</option>
               </select>
             </label>
 
-            <label className="profile-input-group">
+            <label className="profile-input-group tour-room-mode">
               Room Mode
               <div className="room-mode-toggle" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "8px" }}>
                 <button
@@ -746,7 +768,7 @@ export function ProblemsPage() {
               >
                 Cancel
               </button>
-              <button type="submit" className="button primary" disabled={creating}>
+              <button type="submit" className="button primary tour-submit-room" disabled={creating}>
                 {creating ? "Creating..." : "Create Room"}
               </button>
             </div>

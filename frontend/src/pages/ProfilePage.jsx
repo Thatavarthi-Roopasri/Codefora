@@ -22,6 +22,7 @@ export function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [showEmotionModal, setShowEmotionModal] = useState(false);
+  const [showAllActivities, setShowAllActivities] = useState(false);
   const [works, setWorks] = useState([]);
   const [loadingWorks, setLoadingWorks] = useState(false);
 
@@ -83,11 +84,16 @@ export function ProfilePage() {
       bio: bio.trim(),
       emotionId: selectedEmotion,
       community: selectedCommunity,
-      preferredTheme: "dark"
+      preferredTheme: "dark",
+      activities: [{ type: "profile_update", text: "Updated Profile", subtext: "Profile updated successfully", timestamp: Date.now() }, ...(profileData.activities || []).slice(0, 9)]
     };
 
     const ok = await saveProfile(user.uid, nextProfile).then(() => true).catch(() => false);
-    if (ok) setProfileData(nextProfile);
+    if (ok) {
+      setProfileData(nextProfile);
+      document.documentElement.dataset.community = selectedCommunity;
+      localStorage.setItem("codefora_community", selectedCommunity);
+    }
     setIsSaving(false);
     setSaveStatus(ok ? "Saved." : "Could not save profile.");
     setTimeout(() => setSaveStatus(""), 3000);
@@ -130,9 +136,8 @@ export function ProfilePage() {
 
       <div className="profile-v2-container">
         {/* LEFT SIDEBAR */}
-        <aside className="profile-v2-sidebar">
+        <aside className="profile-v2-sidebar tour-profile-card">
           <div className="profile-v2-card main-profile-card">
-            <button className="profile-edit-btn" title="Edit Profile"><Edit3 size={14} /></button>
             
             <div className="profile-avatar-container">
               {selectedEmotion ? (
@@ -147,11 +152,22 @@ export function ProfilePage() {
 
             <h1 className="profile-name">{headerName}</h1>
             <div className="profile-role">
+              <span style={{ fontSize: "10px", fontFamily: "monospace", color: "var(--text-muted)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)" }}>
+                ID: {(() => {
+                  const uid = user?.uid;
+                  if (!uid) return "Unknown";
+                  let hash = 0;
+                  for (let i = 0; i < uid.length; i++) hash = Math.imul(31, hash) + uid.charCodeAt(i) | 0;
+                  return Math.abs(hash).toString().padStart(8, '0').slice(0, 8);
+                })()}
+              </span>
+            </div>
+            <div className="profile-role" style={{ marginTop: "6px" }}>
               <Award size={12} /> Specialist
             </div>
             <p className="profile-email">{user.email}</p>
 
-            <div className="profile-stats-grid">
+            <div className="profile-stats-grid tour-profile-stats">
               <div className="stat-box">
                 <Code className="stat-icon blue" size={18} />
                 <div className="stat-info">
@@ -247,7 +263,7 @@ export function ProfilePage() {
           </div>
 
           {/* SETTINGS */}
-          <div className="profile-v2-card settings-card">
+          <div className="profile-v2-card settings-card tour-profile-settings">
             <div className="card-header-flex">
               <div className="card-title">
                 <UserCircle2 size={16} /> PROFILE SETTINGS
@@ -262,7 +278,7 @@ export function ProfilePage() {
 
             <div className="settings-grid">
               <div className="settings-col">
-                <div className="input-group">
+                <div className="input-group tour-profile-name">
                   <label>Display Name</label>
                   <div className="input-with-icon">
                     <input 
@@ -275,7 +291,7 @@ export function ProfilePage() {
                   </div>
                 </div>
 
-                <div className="input-group">
+                <div className="input-group tour-profile-bio">
                   <label>Bio</label>
                   <div className="textarea-wrapper">
                     <textarea 
@@ -290,7 +306,7 @@ export function ProfilePage() {
               </div>
 
               <div className="settings-col">
-                <div className="input-group">
+                <div className="input-group tour-profile-community">
                   <label>Community</label>
                   <div className="community-selector-row">
                     <button 
@@ -310,7 +326,7 @@ export function ProfilePage() {
                   </div>
                 </div>
 
-                <div className="input-group">
+                <div className="input-group tour-profile-avatar">
                   <label>Avatar / Emotion</label>
                   <div className="avatar-setting-row">
                     <div className="avatar-preview-small">
@@ -347,7 +363,7 @@ export function ProfilePage() {
           {/* BOTTOM WIDGETS */}
           <div className="profile-v2-widgets">
             {/* MY WORKS SECTION */}
-            <div className="profile-v2-card widget-card" style={{ gridColumn: '1 / -1' }}>
+            <div className="profile-v2-card widget-card tour-profile-works" style={{ gridColumn: '1 / -1' }}>
               <div className="card-header-flex">
                 <div className="card-title">
                   <Folder size={16} className="text-blue" /> MY SAVED WORKS
@@ -391,8 +407,8 @@ export function ProfilePage() {
                           fontSize: '10px', 
                           fontWeight: '800', 
                           textTransform: 'uppercase',
-                          background: work.type === 'playground' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(249, 115, 22, 0.1)',
-                          color: work.type === 'playground' ? '#3b82f6' : '#f97316'
+                          background: work.type === 'playground' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(var(--primary-rgb), 0.1)',
+                          color: work.type === 'playground' ? '#3b82f6' : 'var(--primary-color)'
                         }}>
                           {work.type}
                         </div>
@@ -427,52 +443,70 @@ export function ProfilePage() {
             </div>
 
             {/* RECENT ACTIVITY */}
-            <div className="profile-v2-card widget-card">
+            <div className="profile-v2-card widget-card tour-profile-activity">
               <div className="card-header-flex">
                 <div className="card-title">
                   <Flame size={16} className="text-orange" /> RECENT ACTIVITY
                 </div>
-                <button className="view-all-btn">View All</button>
+                <button className="view-all-btn" onClick={() => setShowAllActivities(true)}>View All</button>
               </div>
               
               <div className="activity-timeline">
-                <div className="activity-item">
-                  <div className="activity-icon bg-green"><CheckCircle2 size={12} /></div>
-                  <div className="activity-content">
-                    <strong>Solved Two Sum</strong>
-                    <span>Easy • Practice</span>
+                {(!profileData.activities || profileData.activities.length === 0) ? (
+                  <div className="activity-item">
+                    <div className="activity-icon bg-orange"><Award size={12} /></div>
+                    <div className="activity-content">
+                      <strong>Account Created</strong>
+                      <span>Welcome to Codefora! 🎉</span>
+                    </div>
+                    <div className="activity-time">Just now</div>
                   </div>
-                  <div className="activity-time">2m ago</div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-icon bg-blue"><UserPlus size={12} /></div>
-                  <div className="activity-content">
-                    <strong>Joined Room CF-91</strong>
-                    <span>with 3 others</span>
-                  </div>
-                  <div className="activity-time">15m ago</div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-icon bg-orange"><Award size={12} /></div>
-                  <div className="activity-content">
-                    <strong>Account Created</strong>
-                    <span>Welcome to Codefora! 🚀</span>
-                  </div>
-                  <div className="activity-time">1h ago</div>
-                </div>
-                <div className="activity-item">
-                  <div className="activity-icon bg-purple"><Code size={12} /></div>
-                  <div className="activity-content">
-                    <strong>Updated Bio</strong>
-                    <span>Profile updated successfully</span>
-                  </div>
-                  <div className="activity-time">2h ago</div>
-                </div>
+                ) : (
+                  profileData.activities.slice(0, 2).map((activity, idx) => (
+                    <div className="activity-item" key={idx}>
+                      <div className={`activity-icon ${activity.type === 'room_join' ? 'bg-blue' : activity.type === 'problem_solve' ? 'bg-green' : 'bg-purple'}`}>
+                        {activity.type === 'room_join' ? <Users size={12} /> : activity.type === 'problem_solve' ? <CheckCircle2 size={12} /> : <Code size={12} />}
+                      </div>
+                      <div className="activity-content">
+                        <strong>{activity.text}</strong>
+                        <span>{activity.subtext}</span>
+                      </div>
+                      <div className="activity-time">{new Date(activity.timestamp).toLocaleDateString()}</div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {showAllActivities && (
+        <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="All Activities">
+          <div className="profile-modal-card" style={{ maxWidth: "500px", width: "90%", maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+            <div className="profile-modal-header" style={{ marginBottom: "16px" }}>
+              <h3 style={{ margin: 0, color: "#fff", fontSize: "1.1rem" }}>All Recent Activities</h3>
+            </div>
+            <div className="activity-timeline" style={{ flex: 1, overflowY: "auto", margin: "0 -18px", padding: "0 18px" }}>
+              {profileData.activities.map((activity, idx) => (
+                <div className="activity-item" key={idx}>
+                  <div className={`activity-icon ${activity.type === 'room_join' ? 'bg-blue' : activity.type === 'problem_solve' ? 'bg-green' : 'bg-purple'}`}>
+                    {activity.type === 'room_join' ? <Users size={12} /> : activity.type === 'problem_solve' ? <CheckCircle2 size={12} /> : <Code size={12} />}
+                  </div>
+                  <div className="activity-content">
+                    <strong>{activity.text}</strong>
+                    <span>{activity.subtext}</span>
+                  </div>
+                  <div className="activity-time">{new Date(activity.timestamp).toLocaleDateString()}</div>
+                </div>
+              ))}
+            </div>
+            <div className="profile-modal-footer" style={{ marginTop: "24px" }}>
+              <button className="button" onClick={() => setShowAllActivities(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEmotionModal && (
         <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Select emotion">
@@ -488,11 +522,13 @@ export function ProfilePage() {
                 <X size={16} />
               </button>
             </div>
-            <EmotionPicker 
-              selectedEmotion={selectedEmotion} 
-              onSelectEmotion={setSelectedEmotion} 
-              category={selectedCommunity}
-            />
+              <div style={{ flex: 1, overflowY: "auto", margin: "0 -18px", padding: "0 18px" }}>
+                <EmotionPicker 
+                  selectedEmotion={selectedEmotion} 
+                  onSelectEmotion={setSelectedEmotion} 
+                  category={selectedCommunity}
+                />
+              </div>
             <div className="profile-modal-footer">
               <button type="button" className="button primary" onClick={() => setShowEmotionModal(false)}>
                 Done

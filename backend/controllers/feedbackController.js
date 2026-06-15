@@ -32,13 +32,17 @@ export function createFeedbackController() {
   return {
     submit: async (request, response) => {
       try {
-        const { username, rating, message, type } = request.body;
+        const { username, rating, message, type, reportedId, reportedName, reporterId, reporterName } = request.body;
         const feedback = {
           id: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           username: username || "Anonymous",
           rating: Number(rating) || 0,
           message: message || "",
           type: type || "general",
+          reportedId: reportedId || null,
+          reportedName: reportedName || null,
+          reporterId: reporterId || null,
+          reporterName: reporterName || null,
           createdAt: Date.now()
         };
 

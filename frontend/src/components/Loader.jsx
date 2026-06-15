@@ -50,6 +50,7 @@ export default function Loader({ visible }) {
                 preload="auto"
                 className="loader-video"
                 loop={false}
+                style={{ filter: 'var(--home-video-filter)' }}
               />
             </div>
           </div>

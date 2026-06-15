@@ -36,6 +36,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   const localStream = useRef(null);
   const peers = useRef(new Map());
   const audioHost = useRef(null);
+  const audioContextRef = useRef(null);
   const canSpeakRef = useRef(false);
   const typingTimers = useRef(new Map());
   const activeRoomId = resolvedRoomId || roomId;
@@ -47,7 +48,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   const hasHost = users.some((user) => user.role === "Host");
   const localHostToken = getHostToken(activeRoomId);
   const localFallbackUser = room && !hasHost && localHostToken && room.hostName === username
-    ? { socketId: socket.id || "local-host", name: username, role: "Host", mic: false, speaking: false, color: "#FF7A18" }
+    ? { socketId: socket.id || "local-host", name: username, role: "Host", mic: false, speaking: false, color: "var(--primary-color)" }
     : null;
   const visibleUsers = useMemo(() => {
     const list = localFallbackUser ? [...users, localFallbackUser] : users;
@@ -66,9 +67,10 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   const canEdit = me?.role !== "Viewer";
   const canSpeak = Boolean(me && me.role !== "Viewer");
   const canChat = Boolean(me);
-  const canUseAi = Boolean(room);
+  const canUseAi = Boolean(room) && room?.allowAi !== false;
+  const [previewTarget, setPreviewTarget] = useState(null);
   const showPreview = files.some((file) => file.name.endsWith(".html"));
-  const previewDoc = useMemo(() => buildPreview(files), [files]);
+  const previewDoc = useMemo(() => buildPreview(files, previewTarget), [files, previewTarget]);
 
   useEffect(() => {
     canSpeakRef.current = canSpeak;
@@ -99,9 +101,17 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
         });
       }
       setMicOn(false);
+      sessionStorage.setItem("codefora_mic_on", "false");
       socket.emit("mic:update", { roomId: activeRoomId, mic: false, speaking: false });
     }
   }, [canSpeak, micOn, activeRoomId]);
+
+  useEffect(() => {
+    // Auto-restore mic state on reload if it was previously on
+    if (canSpeak && !micOn && !localStream.current && sessionStorage.getItem("codefora_mic_on") === "true") {
+      toggleMic();
+    }
+  }, [canSpeak, micOn]);
 
   useEffect(() => {
     const activeTyping = typingCursors[0];
@@ -327,18 +337,21 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
   function handleFilesUpdate(nextFiles) {
     setFiles(nextFiles);
-    setActiveName((current) => {
-      if (expectedActiveNameRef.current && nextFiles.some((f) => f.name === expectedActiveNameRef.current)) {
-        const target = expectedActiveNameRef.current;
-        expectedActiveNameRef.current = null;
-        return target;
-      }
-      return nextFiles.some((file) => file.name === current) ? current : nextFiles[0]?.name || "";
-    });
+    
+    // Evaluate target outside state updater to avoid React StrictMode double-invocation bugs
+    const expected = expectedActiveNameRef.current;
+    if (expected && nextFiles.some((f) => f.name === expected)) {
+      setActiveName(expected);
+      expectedActiveNameRef.current = null;
+    } else {
+      setActiveName((current) => nextFiles.some((file) => file.name === current) ? current : nextFiles[0]?.name || "");
+    }
+    
     setRunFile((current) => nextFiles.some((file) => file.name === current) ? current : nextFiles.find((file) => file.name.endsWith(".js"))?.name || nextFiles[0]?.name || "");
   }
 
   function handleRemoteFileUpdate({ fileName, code }) {
+    if (activeFile?.name === fileName) return; // Yjs is already handling this active file
     remoteUpdate.current = true;
     setFiles((items) => items.map((file) => file.name === fileName ? { ...file, code } : file));
     setTimeout(() => {
@@ -351,6 +364,12 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     const code = value ?? "";
     setFiles((items) => items.map((file) => file.name === activeFile.name ? { ...file, code } : file));
     socket.emit("file:update", { roomId: activeRoomId, fileName: activeFile.name, code });
+  }
+
+  function updateFileCode(fileName, code) {
+    if (!fileName || !canEdit) return;
+    setFiles((items) => items.map((file) => file.name === fileName ? { ...file, code } : file));
+    socket.emit("file:update", { roomId: activeRoomId, fileName, code });
   }
 
   function sendChat(text) {
@@ -388,9 +407,14 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
   function endRoom(skipConfirm = false) {
     if (!me || me.role !== "Host") return;
-    if (skipConfirm || window.confirm("Are you sure you want to end this lab for everyone? This will permanently delete the room.")) {
+    if (skipConfirm === true || window.confirm("Are you sure you want to end this lab for everyone? This will permanently delete the room.")) {
       socket.emit("room:end", { roomId: activeRoomId });
     }
+  }
+
+  function updateRoomSettings({ max, visibility, allowAi, allowCopyPaste }) {
+    if (!me || me.role !== "Host") return;
+    socket.emit("room:settings", { roomId: activeRoomId, max, visibility, allowAi, allowCopyPaste });
   }
 
   function createFile(fileName, language, code) {
@@ -447,7 +471,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     }
   }
 
-  function changeFileLanguage(oldFileName, newLanguage) {
+  function changeFileLanguage(oldFileName, newLanguage, code) {
     const extensions = {
       javascript: ".js",
       typescript: ".ts",
@@ -470,7 +494,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     const newFileName = `${baseName}${ext}`;
 
     expectedActiveNameRef.current = newFileName;
-    socket.emit("file:rename", { roomId: activeRoomId, oldFileName, newFileName, language: newLanguage });
+    socket.emit("file:rename", { roomId: activeRoomId, oldFileName, newFileName, language: newLanguage, code });
   }
 
   async function submitCode(problem) {
@@ -524,25 +548,23 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
       if (runRequestId.current !== requestId) return false;
 
-      const failed = results.find((result) => !result.passed);
-      const nextStatus = failed ? "error" : "finished";
+      const firstFailed = results.find((result) => !result.passed);
+      const passedCount = results.filter((r) => r.passed).length;
+      const totalCount = testCases.length;
+      
+      const nextStatus = firstFailed ? "error" : "finished";
       setCompilerStatus(nextStatus);
 
-      if (!failed) {
-        setOutput("Program is correct. All sample test cases passed. 🎉");
+      if (!firstFailed) {
+        setOutput("Program is correct. All sample test cases passed. ✅");
+        if (activeUserId) {
+          api.solveProblem(activeUserId, problem.id).catch(console.error);
+        }
         return true;
       } else {
-        const failedIndex = results.indexOf(failed) + 1;
-        setOutput([
-          `Wrong answer on sample test case ${failedIndex}.`,
-          "",
-          `Input:\n${failed.input}`,
-          "",
-          `Expected Output:\n${failed.expected}`,
-          "",
-          `Your Output:\n${failed.actual || "(empty)"}`
-        ].join("\n"));
-        return false;
+        const failedIndex = results.indexOf(firstFailed);
+        
+        setOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed.\nFailed on test case ${failedIndex + 1}:\nInput: ${firstFailed.input}\nExpected: ${firstFailed.expected}\nActual: ${firstFailed.actual || "(empty)"}`);return false;
       }
     } catch (error) {
       if (runRequestId.current !== requestId) return false;
@@ -628,6 +650,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
         });
       }
       setMicOn(false);
+      sessionStorage.setItem("codefora_mic_on", "false");
       socket.emit("mic:update", { roomId: activeRoomId, mic: false, speaking: false });
       return;
     }
@@ -647,6 +670,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
         // Add voice activity detection
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = audioContext;
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 512;
@@ -654,10 +678,12 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         let isSpeaking = false;
+        let speakingTimeout = null;
 
         const checkSpeaking = () => {
           if (!localStream.current) {
             audioContext.close();
+            if (speakingTimeout) clearTimeout(speakingTimeout);
             return;
           }
           
@@ -665,7 +691,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
           if (!localStream.current.getAudioTracks().some(t => t.enabled)) {
             if (isSpeaking) {
               isSpeaking = false;
-              socket.emit("mic:update", { roomId: activeRoomId, mic: true, speaking: false });
+              socket.emit("mic:update", { roomId: activeRoomId, mic: false, speaking: false });
             }
             requestAnimationFrame(checkSpeaking);
             return;
@@ -675,9 +701,24 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
           const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
           const currentlySpeaking = volume > 20;
 
-          if (currentlySpeaking !== isSpeaking) {
-            isSpeaking = currentlySpeaking;
-            socket.emit("mic:update", { roomId: activeRoomId, mic: true, speaking: isSpeaking });
+          if (currentlySpeaking && !isSpeaking) {
+            isSpeaking = true;
+            if (speakingTimeout) clearTimeout(speakingTimeout);
+            speakingTimeout = null;
+            socket.emit("mic:update", { roomId: activeRoomId, mic: true, speaking: true });
+          } else if (!currentlySpeaking && isSpeaking) {
+            if (!speakingTimeout) {
+              speakingTimeout = setTimeout(() => {
+                isSpeaking = false;
+                socket.emit("mic:update", { roomId: activeRoomId, mic: true, speaking: false });
+                speakingTimeout = null;
+              }, 1000); // 1 second hysteresis to prevent rapid toggling
+            }
+          } else if (currentlySpeaking && isSpeaking) {
+            if (speakingTimeout) {
+              clearTimeout(speakingTimeout);
+              speakingTimeout = null;
+            }
           }
 
           requestAnimationFrame(checkSpeaking);
@@ -692,6 +733,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
       }
 
       setMicOn(true);
+      sessionStorage.setItem("codefora_mic_on", "true");
       socket.emit("mic:update", { roomId: activeRoomId, mic: true, speaking: false });
 
     } catch (error) {
@@ -703,6 +745,10 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     if (localStream.current) {
       localStream.current.getTracks().forEach((track) => track.stop());
       localStream.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
     }
     peers.current.forEach((peer) => {
       try {
@@ -903,12 +949,16 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     socket.emit("notes:draw", { roomId: activeRoomId, draw });
   }
 
-  function startTimer(duration = 25 * 60) {
-    socket.emit("timer:start", { roomId: activeRoomId, duration });
+  function startTimer(duration = 25 * 60, mode = timer.mode) {
+    socket.emit("timer:start", { roomId: activeRoomId, duration, mode });
   }
 
   function stopTimer() {
     socket.emit("timer:stop", { roomId: activeRoomId });
+  }
+
+  function setTimerMode(mode) {
+    socket.emit("timer:mode", { roomId: activeRoomId, mode });
   }
 
   function pushHistory() {
@@ -958,9 +1008,14 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     preview: { showPreview, previewDoc },
     compiler: { compilerStatus, isRunningCode, isSubmittingCode },
     actions: {
-      updateCode, sendChat, sendSticker, endRoom, createFile, deleteActiveFile,
+      updateCode, updateFileCode, sendChat, sendSticker, endRoom, createFile, deleteActiveFile,
       updateRole, kickUser, runCode, submitCode, askAi, toggleMic, forceJoin, clearOutput,
-      updateNotes, drawNote, startTimer, stopTimer, pushHistory, saveWork, changeFileLanguage
+      updateNotes, drawNote, startTimer, stopTimer, setTimerMode, pushHistory, saveWork, changeFileLanguage,
+      updateRoomSettings,
+      setPreviewTarget,
+      setExpectedActiveName: (name) => {
+        expectedActiveNameRef.current = name;
+      }
     }
   };
 }

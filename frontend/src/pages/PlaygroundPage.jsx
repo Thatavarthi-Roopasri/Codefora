@@ -9,6 +9,7 @@ import { api } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 import { buildPreview } from "../lib/preview";
 import { useTheme } from "../hooks/useTheme";
+import { BOILERPLATES } from "../components/room/EditorPanel";
 
 const FILE_TYPES = [
   { label: "JavaScript", language: "javascript", extension: ".js" },
@@ -70,7 +71,8 @@ export function PlaygroundPage() {
       alert("File already exists");
       return;
     }
-    const newFile = { name: fileName, language: selectedType.language, code: "" };
+    const boilerplate = BOILERPLATES[selectedType.language] || "";
+    const newFile = { name: fileName, language: selectedType.language, code: boilerplate };
     setFiles(prev => [...prev, newFile]);
     setActiveName(fileName);
     setNewFileName("");
@@ -134,8 +136,9 @@ export function PlaygroundPage() {
     }
   };
 
+  const [previewTarget, setPreviewTarget] = useState(null);
   const activeFile = files.find(f => f.name === activeName) || files[0];
-  const previewDoc = buildPreview(files);
+  const previewDoc = buildPreview(files, previewTarget);
 
   const handleCodeChange = (value) => {
     setFiles(prev => prev.map(f => f.name === activeName ? { ...f, code: value } : f));
@@ -143,6 +146,9 @@ export function PlaygroundPage() {
 
   const handleRun = async () => {
     if (activeFile.language === 'html' || activeFile.language === 'css') {
+      if (activeFile.language === 'html') {
+        setPreviewTarget(activeFile.name);
+      }
       setOutput("Preview updated.");
       return;
     }
@@ -184,24 +190,30 @@ export function PlaygroundPage() {
   };
 
   // Resize logic
+  const handleResize = (e) => {
+    if (isResizing) {
+      const delta = e.clientY - resizeStart.current.y;
+      const newHeight = resizeStart.current.height - delta;
+      setConsoleHeight(Math.max(100, Math.min(newHeight, window.innerHeight - 100)));
+    }
+  };
+
+  const stopResizing = () => {
+    setIsResizing(false);
+  };
+
   useEffect(() => {
-    const onMove = (e) => {
-      if (isResizing) {
-        const delta = e.clientY - resizeStart.current.y;
-        setConsoleHeight(Math.max(100, Math.min(window.innerHeight - 150, resizeStart.current.height - delta)));
-      }
-    };
-    const onUp = () => setIsResizing(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('mousemove', handleResize);
+    window.addEventListener('mouseup', stopResizing);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('mousemove', handleResize);
+      window.removeEventListener('mouseup', stopResizing);
     };
-  }, [isResizing]);
+  }, [isResizing, consoleHeight]);
 
   return (
     <div className="playground-container" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#020817' }}>
+      {isResizing && <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: 'row-resize' }} />}
       <Navbar />
       
       <div className="playground-header" style={{ 
@@ -218,7 +230,7 @@ export function PlaygroundPage() {
             <h2 style={{ fontSize: '1.1rem', margin: 0, fontWeight: '700' }}>Playground</h2>
           </div>
 
-          <div className="file-tools" style={{ 
+          <div className="file-tools tour-pg-file-create" style={{ 
             borderBottom: 'none', 
             background: 'transparent', 
             padding: 0,
@@ -253,7 +265,7 @@ export function PlaygroundPage() {
             <div className="file-tools-divider" style={{ margin: '0 4px' }} />
 
             <button 
-              className="button compact secondary create-file-button" 
+              className="button compact secondary create-file-button tour-pg-file-import" 
               onClick={() => fileInputRef.current?.click()}
               title="Import"
             >
@@ -267,7 +279,7 @@ export function PlaygroundPage() {
             />
 
             <button 
-              className="button compact secondary create-file-button" 
+              className="button compact secondary create-file-button tour-pg-file-export" 
               onClick={handleExport}
               disabled={isExporting}
               title="Export"
@@ -279,7 +291,7 @@ export function PlaygroundPage() {
 
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <button 
-            className="button primary compact" 
+            className="button primary compact tour-pg-run" 
             onClick={handleRun} 
             disabled={isRunning}
             style={{ gap: '8px' }}
@@ -288,7 +300,7 @@ export function PlaygroundPage() {
             Run
           </button>
           <button 
-            className="button secondary compact" 
+            className="button secondary compact tour-pg-save" 
             onClick={handleSave}
             disabled={isSaving}
             style={{ gap: '8px' }}
@@ -299,7 +311,7 @@ export function PlaygroundPage() {
         </div>
       </div>
 
-      <div className="playground-tabs-row" style={{ 
+      <div className="playground-tabs-row tour-pg-tabs" style={{ 
         padding: '0 24px', 
         background: 'rgba(15, 23, 42, 0.4)', 
         borderBottom: '1px solid var(--glass-border)',
@@ -321,7 +333,7 @@ export function PlaygroundPage() {
               padding: '0 12px',
               borderRadius: '6px 6px 0 0',
               cursor: 'pointer',
-              background: activeName === f.name ? 'rgba(249, 115, 22, 0.1)' : 'transparent',
+              background: activeName === f.name ? 'rgba(var(--primary-rgb), 0.1)' : 'transparent',
               color: activeName === f.name ? 'var(--primary-orange)' : 'var(--text-muted)',
               border: activeName === f.name ? '1px solid var(--glass-border)' : '1px solid transparent',
               borderBottom: activeName === f.name ? '2px solid var(--primary-orange)' : '1px solid transparent'
@@ -345,9 +357,9 @@ export function PlaygroundPage() {
       </div>
 
       <div className="playground-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ flex: 1, display: 'flex' }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {/* Editor Section */}
-          <div style={{ flex: 1, borderRight: '1px solid var(--glass-border)' }}>
+          <div className="tour-pg-editor" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
             <Editor
               height="100%"
               theme="vs-dark"
@@ -359,13 +371,14 @@ export function PlaygroundPage() {
                 lineHeight: 24,
                 minimap: { enabled: false },
                 wordWrap: 'on',
-                padding: { top: 20 }
+                padding: { top: 20 },
+                fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace"
               }}
             />
           </div>
 
           {/* Preview Section */}
-          <div style={{ width: '40%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+          <div style={{ width: '40%', display: 'flex', flexDirection: 'column', background: '#fff', borderLeft: '1px solid var(--line)', minHeight: 0, overflow: 'hidden' }}>
             <div style={{ padding: '8px 16px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b' }}>
               <Globe size={14} />
               <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Web Preview</span>
@@ -378,26 +391,19 @@ export function PlaygroundPage() {
           </div>
         </div>
 
-        {/* Console Section */}
-        <div className="playground-console" style={{ height: `${consoleHeight}px`, borderTop: '2px solid var(--primary-orange)', background: '#010409', display: 'flex', flexDirection: 'column' }}>
-          <div 
-            className="console-resize-handle" 
-            onMouseDown={(e) => {
+          <ConsolePanel
+            output={output}
+            preview={undefined}
+            style={{ height: `${consoleHeight}px`, flex: "0 0 auto", borderTop: '2px solid var(--primary-orange)' }}
+            onResizeStart={(e) => {
+              e.preventDefault();
               resizeStart.current = { y: e.clientY, height: consoleHeight };
               setIsResizing(true);
             }}
-            style={{ height: '4px', cursor: 'row-resize', background: 'transparent' }}
-          />
-          <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
-             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e', marginBottom: '12px', fontSize: '12px' }}>
-               <Terminal size={14} />
-               <span style={{ fontWeight: '700', textTransform: 'uppercase' }}>Output Console</span>
-             </div>
-             <pre style={{ margin: 0, color: '#e6edf3', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-               {output}
-             </pre>
-          </div>
-        </div>
+          onClear={() => setOutput("Ready.")}
+          stdin={stdin}
+          setStdin={setStdin}
+        />
       </div>
     </div>
   );

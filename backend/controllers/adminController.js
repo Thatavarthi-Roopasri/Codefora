@@ -77,7 +77,7 @@ export function createAdminController(roomRepository) {
 
         // Fetch profiles from Firestore to get more info (like rating, solved count, etc)
         const profilesMap = {};
-        if (db) {
+        if (db && !db.isMock) {
           const profilesSnap = await db.collection("profiles").get();
           profilesSnap.forEach(doc => {
             profilesMap[doc.id] = doc.data();
@@ -99,6 +99,8 @@ export function createAdminController(roomRepository) {
             createdAt: user.metadata.creationTime
           };
         });
+
+        users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         return response.json(users);
       } catch (err) {

@@ -9,6 +9,10 @@ export function useTheme() {
     document.documentElement.dataset.theme = "dark";
     localStorage.setItem(STORAGE_KEY, "dark");
     window.dispatchEvent(new CustomEvent("codefora-theme-change", { detail: "dark" }));
+    
+    // Sync community immediately to prevent flashing
+    const comm = localStorage.getItem("codefora_community") || "sider";
+    document.documentElement.dataset.community = comm;
   }, []);
 
   function setTheme() {

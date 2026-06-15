@@ -7,16 +7,12 @@ function getManualUser() {
     const uid = localStorage.getItem("codefora_user_id");
     const displayName = localStorage.getItem("codefora_username");
     if (!uid || !displayName) return null;
-    const role = localStorage.getItem("codefora_role");
-    const adminToken = localStorage.getItem("codefora_admin_token");
     return {
       uid,
       displayName,
       email: `${displayName}@codefora.local`,
       photoURL: null,
       providerId: "manual",
-      role,
-      adminToken
     };
   } catch {
     return null;
@@ -41,8 +37,8 @@ export const useAuth = () => {
     return unsubscribe;
   }, []);
 
-  // Secure admin check based on role and token presence
-  const isAdmin = user?.role === "admin" && Boolean(localStorage.getItem("codefora_admin_token"));
+  // Secure admin check based on email
+  const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user?.email);
 
   return { user, loading, error, isAdmin };
 };

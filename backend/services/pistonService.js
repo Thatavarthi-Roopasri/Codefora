@@ -2,7 +2,7 @@ const PISTON_EXECUTE_URL = process.env.PISTON_EXECUTE_URL || "http://localhost:2
 const PISTON_AUTH_TOKEN = String(process.env.PISTON_AUTH_TOKEN || "").trim();
 const PISTON_AUTH_SCHEME = String(process.env.PISTON_AUTH_SCHEME || "Bearer").trim() || "Bearer";
 
-const JUDGE0_URL = "https://ce.judge0.com/submissions?base64_encoded=false&wait=true";
+const JUDGE0_URL = "https://ce.judge0.com/submissions?base64_encoded=true&wait=true";
 
 // Mapping Piston language names to Judge0 language IDs
 const LANGUAGE_MAP = {
@@ -33,9 +33,9 @@ export class PistonService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          source_code: sourceCode,
+          source_code: Buffer.from(sourceCode).toString('base64'),
           language_id: langId,
-          stdin: stdin
+          stdin: Buffer.from(stdin).toString('base64')
         })
       });
 
@@ -45,16 +45,20 @@ export class PistonService {
 
       const result = await response.json();
 
+      const stdoutDecoded = result.stdout ? Buffer.from(result.stdout, 'base64').toString('utf8') : "";
+      const stderrDecoded = result.stderr ? Buffer.from(result.stderr, 'base64').toString('utf8') : 
+                            (result.compile_output ? Buffer.from(result.compile_output, 'base64').toString('utf8') : "");
+
       return {
-        stdout: result.stdout || "",
-        stderr: result.stderr || result.compile_output || "",
-        output: (result.stdout || "") + (result.stderr || result.compile_output || ""),
+        stdout: stdoutDecoded,
+        stderr: stderrDecoded,
+        output: stdoutDecoded + stderrDecoded,
         executionTime: Math.floor(parseFloat(result.time || 0) * 1000),
         status: result.status?.description?.toLowerCase()?.includes("accepted") ? "success" : "error"
       };
     } catch (error) {
       console.error("[Compiler] Judge0 Error:", error.message);
-      throw createCompilerError("COMPILER_UNAVAILABLE", `Compiler is offline. Error: ${error.message}`, 503);
+      throw createCompilerError("COMPILER_UNAVAILABLE", `Network issue, please improve your internet. (${error.message})`, 503);
     }
   }
 }

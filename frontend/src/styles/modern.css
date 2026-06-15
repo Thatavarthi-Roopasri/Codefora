@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-  --brand-primary: #ff7a18;
+  --brand-primary: var(--primary-color);
   --brand-secondary: #ff9a3c;
   --bg-dark: #020812;
   --glass-bg: rgba(11, 25, 40, 0.45);
@@ -93,12 +93,12 @@ body {
 .btn-modern.primary {
   background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
   color: white;
-  box-shadow: 0 4px 15px rgba(255, 122, 24, 0.3);
+  box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
 }
 
 .btn-modern.primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(255, 122, 24, 0.5);
+  box-shadow: 0 8px 25px rgba(var(--primary-rgb), 0.5);
 }
 
 .btn-modern.secondary {

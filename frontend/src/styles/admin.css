@@ -302,7 +302,7 @@
 .admin-action-btn.warning:hover {
   background: rgba(255, 145, 0, 0.1);
   border-color: rgba(255, 145, 0, 0.3);
-  color: #FF9100;
+  color: var(--primary-accent);
 }
 
 .status-badge {
@@ -439,7 +439,7 @@
 .activity-icon.joined { background: rgba(139, 233, 253, 0.1); color: #8BE9FD; }
 .activity-icon.solved { background: rgba(80, 250, 123, 0.1); color: #50FA7B; }
 .activity-icon.deleted { background: rgba(255, 85, 85, 0.1); color: #FF5555; }
-.activity-icon.reported { background: rgba(255, 145, 0, 0.1); color: #FF9100; }
+.activity-icon.reported { background: rgba(255, 145, 0, 0.1); color: var(--primary-accent); }
 .activity-icon.locked { background: rgba(255, 184, 108, 0.1); color: #FFB86C; }
 .activity-icon.updated { background: rgba(189, 147, 249, 0.1); color: #BD93F9; }
 
