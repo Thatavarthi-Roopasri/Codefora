@@ -1,7 +1,7 @@
-import { Eraser, Pencil, Type, Trash2, X, Maximize2, Minimize2 } from "lucide-react";
+import { Eraser, Pencil, Type, Trash2, X, Maximize2, Minimize2, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-export function NotesModal({ isOpen, onClose, notes, onUpdateText, onDraw, permissions }) {
+export function NotesModal({ isOpen, onClose, notes, onUpdateText, onDraw, permissions, inline }) {
   const canvasRef = useRef(null);
   const [mode, setMode] = useState("draw"); // 'draw' or 'text'
   const [activeTool, setActiveTool] = useState("pencil"); // 'pencil' or 'eraser'
@@ -90,9 +90,8 @@ export function NotesModal({ isOpen, onClose, notes, onUpdateText, onDraw, permi
     setIsDrawing(false);
   };
 
-  return (
-    <div className={`notes-overlay ${isExpanded ? 'expanded' : ''}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`notes-card ${isExpanded ? 'expanded' : ''}`}>
+  const content = (
+      <div className={`notes-card ${isExpanded ? 'expanded' : ''}`} style={inline ? { width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', borderRadius: 0, border: 'none', display: 'flex', flexDirection: 'column' } : {}}>
         <div className="notes-header">
           <div className="notes-title">
             <Pencil size={18} style={{ color: "var(--primary-orange)" }} />
@@ -136,23 +135,34 @@ export function NotesModal({ isOpen, onClose, notes, onUpdateText, onDraw, permi
               <Trash2 size={16} />
             </button>
             <div className="notes-divider" />
-            <button 
-              className="button compact ghost" 
-              onClick={() => setIsExpanded(!isExpanded)}
-              title={isExpanded ? "Minimize" : "Expand"}
-            >
-              {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
+            {inline && (
+              <button 
+                className="button compact ghost" 
+                onClick={() => window.open(window.location.pathname + "?view=notes", "_blank")}
+                title="Open in New Tab"
+              >
+                <ExternalLink size={16} />
+              </button>
+            )}
+            {!inline && (
+              <button 
+                className="button compact ghost" 
+                onClick={() => setIsExpanded(!isExpanded)}
+                title={isExpanded ? "Minimize" : "Expand"}
+              >
+                {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+            )}
             <button className="button compact ghost close-btn" onClick={onClose}><X size={18} /></button>
           </div>
         </div>
 
-        <div className="notes-content">
-          <div className={`notes-canvas-container ${mode === 'draw' ? 'active' : ''}`}>
+        <div className="notes-content" style={inline ? { flex: 1, minHeight: 0 } : {}}>
+          <div className={`notes-canvas-container ${mode === 'draw' ? 'active' : ''}`} style={inline ? { overflow: 'auto', height: '100%' } : {}}>
             <canvas
               ref={canvasRef}
-              width={isExpanded ? 1000 : 600}
-              height={isExpanded ? 700 : 400}
+              width={inline ? 1600 : (isExpanded ? 1000 : 600)}
+              height={inline ? 1000 : (isExpanded ? 700 : 400)}
               onMouseDown={startDrawing}
               onMouseMove={draw}
               onMouseUp={stopDrawing}
@@ -173,6 +183,15 @@ export function NotesModal({ isOpen, onClose, notes, onUpdateText, onDraw, permi
           <p>This is a shared scratchpad. All members can doodle, erase, or type live.</p>
         </div>
       </div>
+  );
+
+  if (inline) {
+    return content;
+  }
+
+  return (
+    <div className={`notes-overlay ${isExpanded ? 'expanded' : ''}`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      {content}
     </div>
   );
 }

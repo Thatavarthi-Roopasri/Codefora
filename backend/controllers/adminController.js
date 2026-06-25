@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createAuth, createFirestore } from "../config/firebase.js";
+import { globalOnlineUsers } from "../utils/presenceTracker.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localProblemsPath = path.join(__dirname, "../data/problems.json");
@@ -38,13 +39,9 @@ export function createAdminController(roomRepository) {
           totalUsers = listUsersResult.users.length;
         }
 
-        // Calculate online users (users in rooms)
-        const onlineUserIds = new Set();
-        rooms.forEach(r => (r.users || []).forEach(u => onlineUserIds.add(u.userId || u.socketId)));
-
         return response.json({
           totalUsers,
-          onlineUsers: onlineUserIds.size,
+          onlineUsers: globalOnlineUsers.size,
           activeRooms: rooms.length,
           totalProblems: problems.length,
           mostSolved: "N/A"
@@ -94,7 +91,7 @@ export function createAdminController(roomRepository) {
             photoURL: user.photoURL || profile.photoURL || "",
             rating: profile.rating || 1500,
             solved: profile.solvedCount || 0,
-            status: "Offline", // Real-time status would require more logic
+            status: globalOnlineUsers.has(user.uid) ? "Online" : "Offline",
             role: profile.role || "user",
             createdAt: user.metadata.creationTime
           };
@@ -115,60 +112,84 @@ export function createAdminController(roomRepository) {
     },
 
     deleteRoom: async (request, response) => {
-      const { id } = request.params;
-      await roomRepository.delete(id);
-      return response.json({ success: true });
-    },
-
-    toggleRoomLock: async (request, response) => {
-      const { id } = request.params;
-      const room = roomRepository.findById(id);
-      if (!room) return response.status(404).json({ error: "Room not found" });
-      
-      room.isLocked = !room.isLocked;
-      await roomRepository.save(room);
-      return response.json({ success: true, isLocked: room.isLocked });
-    },
-
-    publishProblem: async (request, response) => {
-      const { id } = request.params;
-      const problems = await readJSON(localProblemsPath);
-      const problem = problems.find(p => p.id === id);
-      if (!problem) return response.status(404).json({ error: "Problem not found" });
-      
-      problem.published = !problem.published;
-      await writeJSON(localProblemsPath, problems);
-      return response.json({ success: true, published: problem.published });
+      try {
+        const { id } = request.params;
+        await roomRepository.delete(id);
+        return response.json({ success: true });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
     },
 
     deleteProblem: async (request, response) => {
-      const { id } = request.params;
-      const problems = await readJSON(localProblemsPath);
-      const filtered = problems.filter(p => p.id !== id);
-      await writeJSON(localProblemsPath, filtered);
-      return response.json({ success: true });
+      try {
+        const { id } = request.params;
+        const problems = await readJSON(localProblemsPath);
+        const filtered = problems.filter(p => p.id !== id);
+        await writeJSON(localProblemsPath, filtered);
+        return response.json({ success: true });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    toggleRoomLock: async (request, response) => {
+      try {
+        const { id } = request.params;
+        const room = roomRepository.findById(id);
+        if (!room) return response.status(404).json({ error: "Room not found" });
+        
+        room.isLocked = !room.isLocked;
+        await roomRepository.save(room);
+        return response.json({ success: true, isLocked: room.isLocked });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    publishProblem: async (request, response) => {
+      try {
+        const { id } = request.params;
+        const problems = await readJSON(localProblemsPath);
+        const problem = problems.find(p => p.id === id);
+        if (!problem) return response.status(404).json({ error: "Problem not found" });
+        
+        problem.published = !problem.published;
+        await writeJSON(localProblemsPath, problems);
+        return response.json({ success: true, published: problem.published });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
     },
 
     addProblem: async (request, response) => {
-      const problem = request.body;
-      if (!problem.id || !problem.title) return response.status(400).json({ error: "ID and Title are required" });
-      
-      const problems = await readJSON(localProblemsPath);
-      problems.push({ ...problem, published: false });
-      await writeJSON(localProblemsPath, problems);
-      return response.status(201).json({ success: true });
+      try {
+        const problem = request.body;
+        if (!problem.id || !problem.title) return response.status(400).json({ error: "ID and Title are required" });
+        
+        const problems = await readJSON(localProblemsPath);
+        problems.push({ ...problem, published: false });
+        await writeJSON(localProblemsPath, problems);
+        return response.status(201).json({ success: true });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
     },
 
     updateProblem: async (request, response) => {
-      const { id } = request.params;
-      const updates = request.body;
-      const problems = await readJSON(localProblemsPath);
-      const index = problems.findIndex(p => p.id === id);
-      if (index === -1) return response.status(404).json({ error: "Problem not found" });
-      
-      problems[index] = { ...problems[index], ...updates };
-      await writeJSON(localProblemsPath, problems);
-      return response.json({ success: true });
+      try {
+        const { id } = request.params;
+        const updates = request.body;
+        const problems = await readJSON(localProblemsPath);
+        const index = problems.findIndex(p => p.id === id);
+        if (index === -1) return response.status(404).json({ error: "Problem not found" });
+        
+        problems[index] = { ...problems[index], ...updates };
+        await writeJSON(localProblemsPath, problems);
+        return response.json({ success: true });
+      } catch (err) {
+        return response.status(500).json({ error: err.message });
+      }
     }
   };
 }

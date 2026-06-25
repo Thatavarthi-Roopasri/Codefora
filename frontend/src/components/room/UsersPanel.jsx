@@ -39,7 +39,7 @@ export function UsersPanel({
         flexDirection: "column", 
         height: "100%", 
         overflow: "hidden", 
-        background: "var(--bg-secondary)", 
+        background: "transparent", 
         borderRight: "1px solid var(--glass-border)",
         borderRadius: "12px"
       }}

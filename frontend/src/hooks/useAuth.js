@@ -40,5 +40,15 @@ export const useAuth = () => {
   // Secure admin check based on email
   const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user?.email);
 
+  useEffect(() => {
+    if (isAdmin) {
+      localStorage.setItem("codefora_role", "admin");
+      localStorage.setItem("codefora_admin_token", "firebase_master_admin");
+    } else if (user) {
+      localStorage.removeItem("codefora_admin_token");
+      localStorage.setItem("codefora_role", "user");
+    }
+  }, [isAdmin, user]);
+
   return { user, loading, error, isAdmin };
 };

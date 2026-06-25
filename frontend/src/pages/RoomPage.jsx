@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate, useBlocker } from "react-router-dom";
-import { Loader2, AlertTriangle, MessageSquare, X } from "lucide-react";
+import { useParams, useNavigate, useBlocker, useLocation } from "react-router-dom";
+import { Loader2, AlertTriangle, MessageSquare, X, ArrowLeft, PanelLeftClose } from "lucide-react";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { TopBar } from "../components/room/TopBar";
 import { EditorPanel } from "../components/room/EditorPanel";
@@ -11,12 +11,17 @@ import { CommsPanel } from "../components/room/CommsPanel";
 import { ConsolePanel } from "../components/room/ConsolePanel";
 import { FloatingProblem } from "../components/room/FloatingProblem";
 import { ProblemPanel } from "../components/room/ProblemPanel";
+import { FilesPanel } from "../components/room/FilesPanel";
 import { NotesModal } from "../components/room/NotesModal";
 import { TimeTravelModal } from "../components/room/TimeTravelModal";
+import { LeftNavBar } from "../components/room/LeftNavBar";
 import { FooterBar } from "../components/room/FooterBar";
+import { SettingsPanel } from "../components/room/SettingsPanel";
+import { WebPreviewFull } from "../components/room/WebPreviewFull";
 import { problems } from "../data/problems";
 import { getUsername, saveUsername } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
+import loopsbg from "../../assets/loopsbgimage.jpeg";
 
 export function RoomPage() {
   const { roomId } = useParams();
@@ -32,9 +37,25 @@ export function RoomPage() {
   const infoShownRef = useRef(false);
   const [activeCommsTab, setActiveCommsTab] = useState("chat");
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [showFloatingProblem, setShowFloatingProblem] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState("editor"); // "editor", "preview", "notes"
+
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const isNotesView = searchParams.get("view") === "notes";
+
+  const [problemSearch, setProblemSearch] = useState("");
+  const [problemDifficulty, setProblemDifficulty] = useState("All");
+  const [previewProblemId, setPreviewProblemId] = useState(null);
+
+  const previewProblem = previewProblemId ? problems.find(p => p.id === previewProblemId) : null;
+  const filteredProblems = problems.filter(p => {
+    if (problemDifficulty !== "All" && p.difficulty !== problemDifficulty) return false;
+    if (problemSearch && !p.title.toLowerCase().includes(problemSearch.toLowerCase()) && !(p.tags || []).some(t => t.toLowerCase().includes(problemSearch.toLowerCase()))) return false;
+    return true;
+  });
 
   // Tell TourManager when chat opens so it can dynamically inject chat-related tour steps!
   useEffect(() => {
@@ -74,12 +95,34 @@ export function RoomPage() {
 
   const [floatingMsgs, setFloatingMsgs] = useState([]);
   const [consoleHeight, setConsoleHeight] = useState(280);
-  const [usersPanelWidth, setUsersPanelWidth] = useState(222);
+  const [sidebarWidths, setSidebarWidths] = useState({ problem: 450, users: 250, files: 250 });
   const [isResizing, setIsResizing] = useState(false);
   const [isResizingUsers, setIsResizingUsers] = useState(false);
   const [consoleMode, setConsoleMode] = useState("output");
+  const [rightPanelWidth, setRightPanelWidth] = useState(400);
+  const [isResizingRightPanel, setIsResizingRightPanel] = useState(false);
+  const [isSplitView, setIsSplitView] = useState(false);
   const consoleResizeStart = useRef({ y: 0, height: 280 });
-  const usersResizeStart = useRef({ x: 0, width: 222 });
+  const usersResizeStart = useRef({ x: 0, width: 250 });
+  const rightPanelResizeStart = useRef({ x: 0, width: 400 });
+
+  // Sidebar state
+  const [activeSidebarTab, setActiveSidebarTab] = useState(null);
+
+  const prevProblemId = useRef(room?.problemId);
+  const hasInitializedSidebar = useRef(false);
+
+  useEffect(() => {
+    if (room && !hasInitializedSidebar.current) {
+      hasInitializedSidebar.current = true;
+      setActiveSidebarTab(room.problemId ? "problem" : "users");
+    }
+    
+    if (room?.problemId && room.problemId !== prevProblemId.current && hasInitializedSidebar.current) {
+      setActiveSidebarTab("problem");
+    }
+    prevProblemId.current = room?.problemId;
+  }, [room]);
 
   // --- Leave Room Navigation Blocker ---
   const [showLeavePrompt, setShowLeavePrompt] = useState(false);
@@ -107,8 +150,6 @@ export function RoomPage() {
     const feedbackUrl = `/rooms?feedback=true&username=${encodeURIComponent(joinName)}`;
     if (blocker.state === "blocked") {
       blocker.proceed();
-      // blocker.proceed() might not handle search params if we just proceed, 
-      // but usually we want to navigate explicitly if we want params.
       navigate(feedbackUrl);
     } else {
       navigate(feedbackUrl);
@@ -139,14 +180,12 @@ export function RoomPage() {
 
   const activeProblem = getActiveProblem();
 
-  // Auto-populate stdin with the first sample testcase's input when problem is loaded
   useEffect(() => {
     if (activeProblem && activeProblem.tests && activeProblem.tests[0]) {
       setStdin(activeProblem.tests[0].input);
     }
   }, [activeProblem]);
 
-  // --- Tab Close Protection ---
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       e.preventDefault();
@@ -155,9 +194,7 @@ export function RoomPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
-  // -------------------------------------
 
-  // --- Anti-Cheat Copy/Paste Protection ---
   useEffect(() => {
     if (room?.allowCopyPaste === false) {
       const handleCopyPaste = (e) => {
@@ -186,12 +223,21 @@ export function RoomPage() {
     event?.preventDefault?.();
     usersResizeStart.current = {
       x: event?.clientX || 0,
-      width: usersPanelWidth
+      width: sidebarWidths[activeSidebarTab] || 250
     };
     setIsResizingUsers(true);
   };
+  const startRightResizing = (event) => {
+    event?.preventDefault?.();
+    rightPanelResizeStart.current = {
+      x: event?.clientX || 0,
+      width: rightPanelWidth
+    };
+    setIsResizingRightPanel(true);
+  };
   const stopResizing = () => setIsResizing(false);
   const stopUsersResizing = () => setIsResizingUsers(false);
+  const stopRightResizing = () => setIsResizingRightPanel(false);
   const resize = (e) => {
     if (isResizing) {
       const delta = e.clientY - consoleResizeStart.current.y;
@@ -200,10 +246,21 @@ export function RoomPage() {
       setConsoleHeight(Math.min(Math.max(newHeight, 150), maxHeight));
     }
 
-    if (isResizingUsers) {
+    if (isResizingUsers && activeSidebarTab) {
       const delta = e.clientX - usersResizeStart.current.x;
       const newWidth = usersResizeStart.current.width + delta;
-      setUsersPanelWidth(Math.min(Math.max(newWidth, 150), 320));
+      const maxWidth = Math.min(800, window.innerWidth * 0.6);
+      setSidebarWidths(prev => ({
+        ...prev,
+        [activeSidebarTab]: Math.min(Math.max(newWidth, 200), maxWidth)
+      }));
+    }
+
+    if (isResizingRightPanel && activeMainTab !== 'editor') {
+      const delta = rightPanelResizeStart.current.x - e.clientX;
+      const newWidth = rightPanelResizeStart.current.width + delta;
+      const maxWidth = Math.min(800, window.innerWidth * 0.6);
+      setRightPanelWidth(Math.min(Math.max(newWidth, 250), maxWidth));
     }
 
     if (isDraggingUsersModal) {
@@ -229,26 +286,26 @@ export function RoomPage() {
     window.addEventListener("mousemove", resize);
     window.addEventListener("mouseup", stopResizing);
     window.addEventListener("mouseup", stopUsersResizing);
+    window.addEventListener("mouseup", stopRightResizing);
     window.addEventListener("mouseup", handleUsersModalDragEnd);
     return () => {
       window.removeEventListener("mousemove", resize);
       window.removeEventListener("mouseup", stopResizing);
       window.removeEventListener("mouseup", stopUsersResizing);
+      window.removeEventListener("mouseup", stopRightResizing);
       window.removeEventListener("mouseup", handleUsersModalDragEnd);
     };
-  }, [isResizing, isResizingUsers, isDraggingUsersModal]);
+  }, [isResizing, isResizingUsers, isResizingRightPanel, isDraggingUsersModal]);
 
-  // Handle floating messages
   useEffect(() => {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      // Only float messages from others
       if (lastMsg.user !== permissions.me?.name) {
         const id = Math.random();
         setFloatingMsgs(prev => [...prev, { ...lastMsg, floatId: id }]);
         setTimeout(() => {
           setFloatingMsgs(prev => prev.filter(m => m.floatId !== id));
-        }, 6000); // 6 seconds
+        }, 6000);
       }
     }
   }, [messages, permissions.me?.name]);
@@ -257,12 +314,78 @@ export function RoomPage() {
     setFloatingMsgs(prev => prev.filter(m => m.floatId !== id));
   };
 
-  // Persist username locally (used by session hook)
   useEffect(() => {
     if (joinName && joinName.trim()) saveUsername(joinName.trim());
   }, [joinName]);
 
-  // Show Info Modal on first join
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      // Ctrl + ` -> Run Code
+      if (e.ctrlKey && e.key === '`') {
+        e.preventDefault();
+        setConsoleMode("output");
+        setIsConsoleOpen(true);
+        actions.runCode(stdin);
+        return;
+      }
+      // Ctrl + Enter -> Submit Solution
+      if (e.ctrlKey && !e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (activeProblem) {
+          setIsConsoleOpen(true);
+          actions.submitCode(activeProblem);
+          setShowTimeTravel(true);
+        }
+        return;
+      }
+      // Ctrl + Shift + Enter -> Run All Test Cases
+      if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (activeProblem) {
+          setIsConsoleOpen(true);
+          actions.submitCode(activeProblem);
+          setShowTimeTravel(true);
+        }
+        return;
+      }
+      // Ctrl + R -> Run Sample Test Cases
+      if (e.ctrlKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        setConsoleMode("output");
+        setIsConsoleOpen(true);
+        actions.runCode(stdin);
+        return;
+      }
+      // Ctrl + S -> Save Code
+      if (e.ctrlKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (actions.saveWork) actions.saveWork(`Project in ${room?.id || roomId}`);
+        return;
+      }
+      // Ctrl + Shift + M -> Mute / Unmute Mic
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        actions.toggleMic();
+        return;
+      }
+      // Ctrl + Shift + V -> Join / Leave Voice Chat (proxy to leave room for now or toggle mic)
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        handleLeaveRequest();
+        return;
+      }
+      // Ctrl + Shift + C -> Copy Room Invite Link
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        navigator.clipboard.writeText(window.location.href);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+  }, [actions, activeProblem, stdin, room, roomId]);
+
   useEffect(() => {
     if (room && !infoShownRef.current) {
       setShowInfoModal(true);
@@ -270,7 +393,6 @@ export function RoomPage() {
     }
   }, [room]);
 
-  /* ── Loading state ── */
   if (!room && !joinError) {
     return (
       <div className="room-loading">
@@ -280,7 +402,6 @@ export function RoomPage() {
     );
   }
 
-  /* ── Error state ── */
   if (joinError) {
     if (joinError.reason === "already_in_room") {
       return (
@@ -305,10 +426,313 @@ export function RoomPage() {
     );
   }
 
+  if (isNotesView) {
+    return (
+      <div style={{ height: "100vh", width: "100vw", background: "var(--bg-primary)", display: "flex", flexDirection: "column" }}>
+        <NotesModal 
+          isOpen={true} 
+          onClose={() => window.close()} 
+          notes={notes} 
+          onUpdateText={actions.updateNotes} 
+          onDraw={actions.drawNote} 
+          permissions={permissions} 
+          inline={true} 
+        />
+      </div>
+    );
+  }
+
+  const topBarComponent = (
+    <TopBar 
+      room={room}
+      users={users}
+      onShowUsersModal={() => setActiveSidebarTab(activeSidebarTab === 'users' ? null : 'users')}
+      hasProblem={!!room.problemId}
+      onRun={() => {
+        if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
+          if (activeFile.name.endsWith('.html')) {
+            actions.setPreviewTarget(activeFile.name);
+          }
+          if (preview?.showPreview) {
+            setConsoleMode("preview");
+            setIsConsoleOpen(true);
+            return;
+          }
+        }
+        setConsoleMode("output");
+        setIsConsoleOpen(true);
+        actions.runCode(stdin);
+      }}
+      onSubmit={() => {
+        setIsConsoleOpen(true);
+        actions.submitCode(activeProblem);
+        setShowTimeTravel(true);
+      }}
+      isRunningCode={compiler.isRunningCode}
+      isSubmittingCode={compiler.isSubmittingCode}
+      canSubmit={!!activeProblem && !compiler.isRunningCode && !compiler.isSubmittingCode}
+      timer={timer}
+      permissions={permissions}
+      actions={actions}
+      activeMainTab={activeMainTab}
+      activeFile={activeFile}
+      isSplitView={isSplitView}
+      setIsSplitView={setIsSplitView}
+    />
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="room-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.3), rgba(15, 23, 42, 0.6)), url(${loopsbg})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
       {(isResizing || isResizingUsers) && <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: isResizing ? 'row-resize' : 'col-resize' }} />}
-      <div className="workspace layout-v2" style={{ flex: 1, height: 'auto' }}>
+      
+      <LeftNavBar 
+        activeTab={activeMainTab === 'preview' ? 'preview' : activeMainTab === 'notes' ? 'notes' : activeSidebarTab}
+        micOn={micOn}
+        onToggleMic={actions.toggleMic}
+        onLeave={handleLeaveRequest}
+        onShowFiles={() => {
+          setActiveMainTab('editor');
+          setActiveSidebarTab(activeSidebarTab === 'files' ? null : 'files');
+        }}
+        onShowProblem={() => {
+          setActiveMainTab('editor');
+          setActiveSidebarTab(activeSidebarTab === 'problem' ? null : 'problem');
+        }}
+        onShowUsers={() => {
+          setActiveMainTab('editor');
+          setActiveSidebarTab(activeSidebarTab === 'users' ? null : 'users');
+        }}
+        onShowNotes={() => {
+          setActiveSidebarTab(null);
+          setActiveMainTab(activeMainTab === 'notes' ? 'editor' : 'notes');
+        }}
+        showPreviewButton={preview?.showPreview}
+        onShowFullPreview={() => {
+          setActiveSidebarTab(null);
+          setActiveMainTab(activeMainTab === 'preview' ? 'editor' : 'preview');
+        }}
+        isConsoleOpen={isConsoleOpen}
+        onToggleConsole={() => {
+          setIsConsoleOpen(!isConsoleOpen);
+          if (!isConsoleOpen && activeMainTab !== 'editor' && !isSplitView) {
+            setActiveMainTab('editor'); // Auto switch to editor if we open console and it's full view
+          }
+        }}
+        onShowInfo={() => setShowInfoModal(true)}
+        onShowSettings={() => setActiveSidebarTab(activeSidebarTab === 'settings' ? null : 'settings')}
+        room={room}
+        users={users}
+        permissions={permissions}
+        actions={actions}
+      />
+
+      {activeSidebarTab && (
+        <>
+          <div 
+            className={`workspace-sidebar ${isResizingUsers ? "is-resizing-users" : ""}`}
+            style={{ width: `${sidebarWidths[activeSidebarTab] || 250}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', borderRight: "1px solid var(--glass-border)", background: "transparent" }}
+          >
+            {activeSidebarTab === "problem" ? (
+              <div style={{ height: "100%", overflowY: "auto", position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                <button 
+                  onClick={() => setActiveSidebarTab(null)}
+                  style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', zIndex: 10, padding: '4px' }}
+                >
+                  <PanelLeftClose size={16} />
+                </button>
+                {activeProblem ? (
+                  <>
+                    <ProblemPanel problem={activeProblem} />
+                    {permissions.isHost && (
+                      <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)", background: 'transparent', marginTop: 'auto' }}>
+                        <button 
+                          className="button secondary" 
+                          style={{ width: "100%" }}
+                          onClick={() => actions.setProblem(null)}
+                        >
+                          Change Problem
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : previewProblem ? (
+                  <>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.1)", display: 'flex', alignItems: 'center', marginTop: '30px' }}>
+                      <button 
+                        onClick={() => setPreviewProblemId(null)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'transparent', border: 'none', color: 'var(--primary-orange)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+                      >
+                        <ArrowLeft size={16} /> Back
+                      </button>
+                    </div>
+                    <ProblemPanel problem={previewProblem} />
+                    {permissions.isHost && (
+                      <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)", background: 'transparent', marginTop: 'auto' }}>
+                        <button 
+                          className="button primary" 
+                          style={{ width: "100%", background: 'var(--primary-orange)', color: '#000', fontWeight: 'bold' }}
+                          onClick={() => {
+                            actions.setProblem(previewProblem.id);
+                            setPreviewProblemId(null);
+                          }}
+                        >
+                          Solve in Room
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ padding: "48px 16px 16px 16px", display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <h3 style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: "16px", flexShrink: 0 }}>
+                      Select a Problem
+                    </h3>
+                    
+                    <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "8px", flexShrink: 0 }}>
+                      <input 
+                        type="text" 
+                        placeholder="Search problems or topics..." 
+                        value={problemSearch}
+                        onChange={e => setProblemSearch(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff', fontSize: '13px', outline: 'none' }}
+                      />
+                      <select 
+                        value={problemDifficulty}
+                        onChange={e => setProblemDifficulty(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff', fontSize: '13px', outline: 'none' }}
+                      >
+                        <option value="All">All Difficulties</option>
+                        <option value="Easy">Easy</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Hard">Hard</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px", overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+                      {filteredProblems.map(p => (
+                        <div 
+                          key={p.id}
+                          style={{
+                            padding: "12px",
+                            background: "rgba(255,255,255,0.02)",
+                            border: "1px solid rgba(255,255,255,0.05)",
+                            borderRadius: "8px",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+                          }}
+                        >
+                          <h4 style={{ margin: "0 0 8px 0", color: "#fff", fontSize: "14px" }}>{p.title}</h4>
+                          <div style={{ display: "flex", gap: "8px", fontSize: "12px", marginBottom: "12px" }}>
+                            <span style={{ color: p.difficulty === "Easy" ? "#4ade80" : p.difficulty === "Medium" ? "#facc15" : "#f87171" }}>
+                              {p.difficulty}
+                            </span>
+                          </div>
+                          
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button 
+                              onClick={() => setPreviewProblemId(p.id)}
+                              style={{ flex: 1, padding: "6px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "none", borderRadius: "4px", fontSize: "12px", cursor: "pointer", fontWeight: "bold" }}
+                            >
+                              View
+                            </button>
+                            {permissions.isHost && (
+                              <button 
+                                onClick={() => actions.setProblem(p.id)}
+                                style={{ flex: 1, padding: "6px", background: "var(--primary-orange)", color: "#000", border: "none", borderRadius: "4px", fontSize: "12px", cursor: "pointer", fontWeight: "bold" }}
+                              >
+                                Solve
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {filteredProblems.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
+                          No problems found.
+                        </div>
+                      )}
+                    </div>
+                    {!permissions.isHost && (
+                      <p style={{ marginTop: "16px", fontSize: "12px", color: "var(--primary-orange)", textAlign: "center", fontStyle: "italic", opacity: 0.8, flexShrink: 0 }}>
+                        Only the host can start a problem.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : activeSidebarTab === "users" ? (
+              <div style={{ height: "100%", position: 'relative' }}>
+                <button 
+                  onClick={() => setActiveSidebarTab(null)}
+                  style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', zIndex: 10, padding: '4px' }}
+                >
+                  <PanelLeftClose size={16} />
+                </button>
+                <UsersPanel
+                  room={room}
+                  roomId={resolvedRoomId}
+                  users={users}
+                  permissions={permissions}
+                  onRoleChange={actions.updateRole}
+                  onKickUser={actions.kickUser}
+                />
+              </div>
+            ) : activeSidebarTab === "files" ? (
+              <div style={{ height: "100%", position: 'relative' }}>
+                <button 
+                  onClick={() => setActiveSidebarTab(null)}
+                  style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', zIndex: 10, padding: '4px' }}
+                >
+                  <PanelLeftClose size={16} />
+                </button>
+                <FilesPanel
+                  roomId={resolvedRoomId}
+                  files={files}
+                  activeFile={activeFile}
+                  activeName={activeName}
+                  setActiveName={setActiveName}
+                  permissions={permissions}
+                  onCreateFile={actions.createFile}
+                  onExpectActiveName={actions.setExpectedActiveName}
+                  onDeleteFile={actions.deleteActiveFile}
+                  onChangeLanguage={actions.changeFileLanguage}
+                  onSaveWork={actions.saveWork}
+                />
+              </div>
+            ) : activeSidebarTab === "settings" ? (
+              <div style={{ height: "100%", position: 'relative' }}>
+                <button 
+                  onClick={() => setActiveSidebarTab(null)}
+                  style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '4px', cursor: 'pointer', zIndex: 10, padding: '4px' }}
+                >
+                  <PanelLeftClose size={16} />
+                </button>
+                <SettingsPanel
+                  room={room}
+                  users={users}
+                  timer={timer}
+                  permissions={permissions}
+                  actions={actions}
+                />
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="users-resize-handle"
+            onMouseDown={startUsersResizing}
+            onDoubleClick={() => setSidebarWidths(prev => ({ ...prev, [activeSidebarTab]: activeSidebarTab === 'problem' ? 450 : 250 }))}
+            aria-label="Resize sidebar"
+            title="Drag to resize sidebar"
+          />
+        </>
+      )}
+
+      <div className="workspace layout-v2" style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, gap: 0 }}>
         <div ref={audioHost} style={{ display: "none" }} />
 
         <div className="floating-notifications">
@@ -324,34 +748,6 @@ export function RoomPage() {
           onClose={() => setShowInfoModal(false)} 
         />
 
-        <TopBar 
-          room={room}
-          users={users}
-          files={files}
-          runFile={runFile}
-          setRunFile={setRunFile}
-          micOn={micOn}
-          permissions={permissions}
-          onMic={actions.toggleMic}
-          actions={actions}
-          onLeaveRequest={handleLeaveRequest}
-          onShowInfo={() => setShowInfoModal(true)}
-          onShowNotes={() => setShowNotes(true)}
-          onShowProblem={() => setShowFloatingProblem(true)}
-          onShowUsersModal={() => setShowUsersModal(true)}
-          timer={timer}
-          hasProblem={!!room.problemId}
-        />
-
-        <NotesModal 
-          isOpen={showNotes}
-          onClose={() => setShowNotes(false)}
-          notes={notes}
-          onUpdateText={actions.updateNotes}
-          onDraw={actions.drawNote}
-          permissions={permissions}
-        />
-
         {showTimeTravel && (
           <TimeTravelModal 
             isOpen={showTimeTravel}
@@ -361,120 +757,141 @@ export function RoomPage() {
           />
         )}
 
-        {showFloatingProblem && activeProblem && (
-          <FloatingProblem 
-            problem={activeProblem} 
-            onClose={() => setShowFloatingProblem(false)} 
-            onSubmit={async () => {
-              const success = await actions.submitCode(activeProblem);
-              setShowTimeTravel(true); // Open the Time Travel modal on submission success/failure!
-              return success;
-            }}
-          />
-        )}
+        {/* Global TopBar if left side is completely hidden (Full screen Notes/Preview) */}
+        {!( (!activeMainTab || activeMainTab === 'editor' || isSplitView) ) && topBarComponent}
 
         <div
-          className={`workspace-main ${isResizingUsers ? "is-resizing-users" : ""}`}
-          style={{ "--users-panel-width": `${usersPanelWidth}px` }}
+          className={`workspace-main-v3`}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', borderRadius: 0 }}
         >
-          {room.problemId ? (
-            <div style={{ height: "100%", overflowY: "auto", borderRight: "1px solid var(--glass-border)", background: "rgba(0,0,0,0.2)" }}>
-              <ProblemPanel problem={activeProblem} />
+          <div className="middle-column" style={{ flex: 1, display: 'flex', flexDirection: isSplitView ? 'row' : 'column', minHeight: 0 }}>
+            {/* Left side: Editor and Console */}
+            {(!activeMainTab || activeMainTab === 'editor' || isSplitView) && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
+                {topBarComponent}
+              <EditorPanel
+                roomId={resolvedRoomId}
+                allowCopyPaste={room?.allowCopyPaste}
+                files={files}
+                activeFile={activeFile}
+                activeName={activeName}
+                setActiveName={setActiveName}
+                users={users}
+                typing={typing}
+                typingCursors={typingCursors}
+                permissions={permissions}
+                onChange={actions.updateCode}
+                onUpdateFileCode={actions.updateFileCode}
+                onCreateFile={actions.createFile}
+                onExpectActiveName={actions.setExpectedActiveName}
+                onDeleteFile={actions.deleteActiveFile}
+                onChangeLanguage={actions.changeFileLanguage}
+                onSaveWork={actions.saveWork}
+                onRun={() => {
+                  if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
+                    if (activeFile.name.endsWith('.html')) {
+                      actions.setPreviewTarget(activeFile.name);
+                    }
+                    if (preview?.showPreview) {
+                      setConsoleMode("preview");
+                      setIsConsoleOpen(true);
+                      return;
+                    }
+                  }
+                  setConsoleMode("output");
+                  setIsConsoleOpen(true);
+                  actions.runCode(stdin);
+                }}
+                onSubmit={() => {
+                  setIsConsoleOpen(true);
+                  actions.submitCode(activeProblem);
+                  setShowTimeTravel(true);
+                }}
+                isRunningCode={compiler.isRunningCode}
+                isSubmittingCode={compiler.isSubmittingCode}
+                canSubmit={!!activeProblem && !compiler.isRunningCode && !compiler.isSubmittingCode}
+              />
+              {isConsoleOpen && (
+                <ConsolePanel
+                  output={output}
+                  preview={preview}
+                  stdin={stdin}
+                  setStdin={setStdin}
+                  style={{ height: `${consoleHeight}px`, flex: "0 0 auto", borderTop: "1px solid var(--glass-border)", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(10px)" }}
+                  onResizeStart={startResizing}
+                  onClear={actions.clearOutput}
+                  files={files}
+                  runFile={runFile}
+                  setRunFile={setRunFile}
+                  isRunningCode={compiler.isRunningCode}
+                  isSubmittingCode={compiler.isSubmittingCode}
+                  panelMode={consoleMode}
+                  setPanelMode={setConsoleMode}
+                  onOpenSplitPreview={() => {
+                    setActiveMainTab('preview');
+                    setIsSplitView(true);
+                    setIsConsoleOpen(false);
+                  }}
+                  onOpenFullPreview={() => {
+                    setActiveMainTab('preview');
+                    setIsSplitView(false);
+                    setIsConsoleOpen(false);
+                  }}
+                  onClose={() => setIsConsoleOpen(false)}
+                  onRun={() => {
+                    if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
+                      if (activeFile.name.endsWith('.html')) {
+                        actions.setPreviewTarget(activeFile.name);
+                      }
+                      if (preview?.showPreview) {
+                        setConsoleMode("preview");
+                        return;
+                      }
+                    }
+                    setConsoleMode("output");
+                    actions.runCode(stdin);
+                  }}
+                  onSubmit={() => {
+                    actions.submitCode(activeProblem);
+                    setShowTimeTravel(true);
+                  }}
+                  activeProblem={activeProblem}
+                  canSubmit={permissions.canEdit}
+                />
+              )}
             </div>
-          ) : (
-            <UsersPanel
-              room={room}
-              roomId={resolvedRoomId}
-              users={users}
-              permissions={permissions}
-              onRoleChange={actions.updateRole}
-              onKickUser={actions.kickUser}
-            />
-          )}
-          <button
-            type="button"
-            className="users-resize-handle"
-            onMouseDown={startUsersResizing}
-            onDoubleClick={() => setUsersPanelWidth(222)}
-            aria-label="Resize members panel"
-            title="Drag to resize members panel"
-          />
+            )}
 
-          <div className="middle-column">
-            <EditorPanel
-              roomId={resolvedRoomId}
-              allowCopyPaste={room?.allowCopyPaste}
-              files={files}
-              activeFile={activeFile}
-              activeName={activeName}
-              setActiveName={setActiveName}
-              users={users}
-              typing={typing}
-              typingCursors={typingCursors}
-              permissions={permissions}
-              onChange={actions.updateCode}
-              onUpdateFileCode={actions.updateFileCode}
-              onCreateFile={actions.createFile}
-              onExpectActiveName={actions.setExpectedActiveName}
-              onDeleteFile={actions.deleteActiveFile}
-              onChangeLanguage={actions.changeFileLanguage}
-              onSaveWork={actions.saveWork}
-              onRun={() => {
-                if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
-                  if (activeFile.name.endsWith('.html')) {
-                    actions.setPreviewTarget(activeFile.name);
-                  }
-                  if (preview?.showPreview) {
-                    setConsoleMode("preview");
-                    return;
-                  }
-                }
-                setConsoleMode("output");
-                actions.runCode(stdin);
-              }}
-              onSubmit={() => {
-                actions.submitCode(activeProblem);
-                setShowTimeTravel(true);
-              }}
-              isRunningCode={compiler.isRunningCode}
-              isSubmittingCode={compiler.isSubmittingCode}
-              canSubmit={!!activeProblem && compiler.compilerStatus === "Ready"}
-            />
-            <ConsolePanel
-              output={output}
-              preview={preview}
-              stdin={stdin}
-              setStdin={setStdin}
-              style={{ height: `${consoleHeight}px`, flex: "0 0 auto" }}
-              onResizeStart={startResizing}
-              onClear={actions.clearOutput}
-              files={files}
-              runFile={runFile}
-              setRunFile={setRunFile}
-              isRunningCode={compiler.isRunningCode}
-              isSubmittingCode={compiler.isSubmittingCode}
-              panelMode={consoleMode}
-              setPanelMode={setConsoleMode}
-              onRun={() => {
-                if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
-                  if (activeFile.name.endsWith('.html')) {
-                    actions.setPreviewTarget(activeFile.name);
-                  }
-                  if (preview?.showPreview) {
-                    setConsoleMode("preview");
-                    return;
-                  }
-                }
-                setConsoleMode("output");
-                actions.runCode(stdin);
-              }}
-              onSubmit={() => {
-                actions.submitCode(activeProblem);
-                setShowTimeTravel(true);
-              }}
-              activeProblem={activeProblem}
-              canSubmit={permissions.canEdit}
-            />
+            {/* Right side: Preview or Notes */}
+            {activeMainTab !== 'editor' && (
+              <>
+                {isSplitView && (
+                  <div
+                    className="right-resize-handle"
+                    onMouseDown={startRightResizing}
+                    style={{ width: "8px", cursor: "col-resize", flexShrink: 0, zIndex: 20, background: "rgba(255,255,255,0.02)" }}
+                  />
+                )}
+                <div className="right-panel" style={{ width: isSplitView ? `${rightPanelWidth}px` : '100%', flex: isSplitView ? '0 0 auto' : 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderLeft: isSplitView ? "1px solid var(--glass-border)" : "none", background: "rgba(15, 23, 42, 0.3)", backdropFilter: "blur(8px)" }}>
+                  {activeMainTab === 'preview' ? (
+                    <WebPreviewFull 
+                      previewDoc={preview.previewDoc} 
+                      onClose={() => setActiveMainTab('editor')} 
+                    />
+                  ) : activeMainTab === 'notes' ? (
+                    <NotesModal 
+                      isOpen={true} 
+                      onClose={() => setActiveMainTab('editor')} 
+                      notes={notes} 
+                      onUpdateText={actions.updateNotes} 
+                      onDraw={actions.drawNote} 
+                      permissions={permissions} 
+                      inline={true} 
+                    />
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
         </div>
 

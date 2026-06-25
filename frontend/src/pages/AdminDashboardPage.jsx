@@ -431,7 +431,9 @@ export default function AdminDashboardPage() {
                                 </button>
                                 <button className="admin-action-btn danger" title="Delete Problem" onClick={() => {
                                   if (window.confirm("Delete problem?")) {
-                                    api.request(`/api/admin/problems/${prob.id}`, { method: 'DELETE' }).then(() => fetchData());
+                                    api.request(`/api/admin/problems/${prob.id}`, { method: 'DELETE' })
+                                      .then(() => fetchData())
+                                      .catch(err => alert("Delete failed: " + err.message));
                                   }
                                 }}><Trash2 size={14} /></button>
                               </div>
@@ -537,7 +539,7 @@ export default function AdminDashboardPage() {
                             </td>
                             <td>{u.rating}</td>
                             <td>{u.solved}</td>
-                            <td><span className={`status-badge offline`}>{u.status}</span></td>
+                            <td><span className={`status-badge ${u.status.toLowerCase()}`}>{u.status}</span></td>
                             <td>
                               <div className="admin-table-actions">
                                 <button className="admin-action-btn" title="View"><Eye size={12} /></button>

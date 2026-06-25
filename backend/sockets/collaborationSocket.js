@@ -1,4 +1,5 @@
 import { cryptoId } from "../utils/id.js";
+import { globalOnlineUsers } from "../utils/presenceTracker.js";
 
 const MEMBER_COLORS = ["#00E5FF", "#FF9100", "#FF007F", "#B400FF", "#00FF00", "#FFEA00", "#FF0000", "#00FFCC"];
 const assignUserColor = (role, existingUsers = []) => {
@@ -24,6 +25,14 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
   const broadcastRooms = () => io.emit("rooms:update", roomRepository.allPublicSummaries((room) => roomService.publicRoom(room)));
 
   io.on("connection", (socket) => {
+    socket.on("user:presence", (userId) => {
+      if (!userId) return;
+      socket.globalUserId = userId;
+      if (!globalOnlineUsers.has(userId)) {
+        globalOnlineUsers.set(userId, new Set());
+      }
+      globalOnlineUsers.get(userId).add(socket.id);
+    });
     socket.onAny((event, ...args) => {
       const activeEvents = ["room:join", "file:update", "file:create", "file:delete", "typing", "cursor:update", "chat:send", "mic:update", "voice:signal", "role:update"];
       if (activeEvents.includes(event)) {
@@ -160,7 +169,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       }
 
       // Final cleanup to prevent duplicates
-      room.users = room.users.filter(u => u.socketId !== socket.id && (!requestUserId || u.userId !== requestUserId));
+      room.users = room.users.filter(u => u.socketId !== socket.id && (!requestUserId || u.userId !== requestUserId) && (!requestSessionId || u.sessionId !== requestSessionId));
 
       room.users.push(user);
       socket.emit("room:state", roomService.snapshot(room));
@@ -202,6 +211,19 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         room.allowCopyPaste = Boolean(allowCopyPaste);
       }
 
+      roomRepository.save(room).catch((error) => console.warn(`Room persistence failed: ${error.message}`));
+      io.to(roomId).emit("room:state", roomService.snapshot(room));
+      broadcastRooms();
+    });
+
+    socket.on("room:set_problem", ({ roomId, problemId }) => {
+      const room = roomRepository.findById(roomId);
+      const user = room && roomService.findUser(room, socket.id);
+      const authorized = Boolean(room && ((user && user.role === "Host") || (user?.userId && room.ownerUserId && user.userId === room.ownerUserId)));
+      console.log(`room:set_problem -> roomId: ${roomId}, problemId: ${problemId}, user: ${user?.name}, role: ${user?.role}, authorized: ${authorized}`);
+      if (!room || !authorized) return;
+
+      room.problemId = problemId;
       roomRepository.save(room).catch((error) => console.warn(`Room persistence failed: ${error.message}`));
       io.to(roomId).emit("room:state", roomService.snapshot(room));
       broadcastRooms();
@@ -474,6 +496,14 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     });
 
     socket.on("disconnect", () => {
+      if (socket.globalUserId && globalOnlineUsers.has(socket.globalUserId)) {
+        const userSockets = globalOnlineUsers.get(socket.globalUserId);
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          globalOnlineUsers.delete(socket.globalUserId);
+        }
+      }
+
       const roomId = socketUsers.get(socket.id);
       const room = roomId && roomRepository.findById(roomId);
       socketUsers.delete(socket.id);

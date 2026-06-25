@@ -1,0 +1,1 @@
+fetch('https://codefora.online/assets/index-I6vpn0M9.js').then(r => r.text()).then(t => { console.log(t.substring(0, 1000)); const match = t.match(/http[^\"]+5000/g); console.log(match); })

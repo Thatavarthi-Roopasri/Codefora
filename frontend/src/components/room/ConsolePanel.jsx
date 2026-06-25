@@ -1,4 +1,4 @@
-import { Globe2, Loader2, Play, Terminal, Keyboard } from "lucide-react";
+import { Globe2, Loader2, Play, Terminal, Keyboard, PanelLeftClose, Monitor } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
 // Double buffered iframe prevents the white flash when updating srcDoc
@@ -73,7 +73,10 @@ export function ConsolePanel({
   stdin,
   setStdin,
   panelMode: externalPanelMode,
-  setPanelMode: externalSetPanelMode 
+  setPanelMode: externalSetPanelMode,
+  onOpenSplitPreview,
+  onOpenFullPreview,
+  onClose
 }) {
   const [localPanelMode, setLocalPanelMode] = useState("output");
   const panelMode = externalPanelMode !== undefined ? externalPanelMode : localPanelMode;
@@ -187,6 +190,56 @@ export function ConsolePanel({
             </button>
           )}
 
+          {panelMode === "preview" && onOpenSplitPreview && (
+            <button 
+              className="button secondary console-run-btn mobile-hidden" 
+              onClick={onOpenSplitPreview}
+              title="Open Split View"
+              style={{
+                height: '30px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: '500',
+                fontSize: '12px',
+                cursor: 'pointer',
+                padding: '0 12px'
+              }}
+            >
+              <PanelLeftClose size={14} />
+              <span>Split Screen</span>
+            </button>
+          )}
+
+          {panelMode === "preview" && onOpenFullPreview && (
+            <button 
+              className="button secondary console-run-btn mobile-hidden" 
+              onClick={onOpenFullPreview}
+              title="Open Full Screen"
+              style={{
+                height: '30px',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: '500',
+                fontSize: '12px',
+                cursor: 'pointer',
+                padding: '0 12px'
+              }}
+            >
+              <Monitor size={14} />
+              <span>Full Screen</span>
+            </button>
+          )}
+
           <button 
             className="button secondary console-run-btn" 
             onClick={onClear}
@@ -204,6 +257,28 @@ export function ConsolePanel({
           >
             Clear
           </button>
+          
+          {onClose && (
+            <button 
+              onClick={onClose}
+              style={{
+                height: '30px',
+                width: '30px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                marginLeft: '8px'
+              }}
+              title="Close Console"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          )}
         </div>
       </div>
       
@@ -215,7 +290,7 @@ export function ConsolePanel({
                 <div style={{ fontSize: '11px', color: '#3b82f6', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Custom Input (stdin)
                 </div>
-                <div style={{ flex: 1, background: '#070c14', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '8px', display: 'flex', minHeight: 0 }}>
+                <div style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '8px', display: 'flex', minHeight: 0 }}>
                   <textarea 
                     style={{ 
                       flex: 1, 
@@ -239,7 +314,7 @@ export function ConsolePanel({
                 <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Output
                 </div>
-                <div style={{ flex: 1, background: '#070c14', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '8px', padding: '16px', overflowY: 'auto', boxSizing: 'border-box', minHeight: 0 }}>
+                <div style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '8px', padding: '16px', overflowY: 'auto', boxSizing: 'border-box', minHeight: 0 }}>
                   {renderFormattedOutput(output)}
                 </div>
               </div>

@@ -50,6 +50,10 @@ export function PlaygroundPage() {
   const [newFileType, setNewFileType] = useState(FILE_TYPES[0].language);
   const [consoleHeight, setConsoleHeight] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState("editor");
+  const [isSplitView, setIsSplitView] = useState(true);
+  const [consoleMode, setConsoleMode] = useState("output");
+  const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const resizeStart = useRef({ y: 0, height: 300 });
   const fileInputRef = useRef(null);
 
@@ -149,10 +153,14 @@ export function PlaygroundPage() {
       if (activeFile.language === 'html') {
         setPreviewTarget(activeFile.name);
       }
+      setConsoleMode("preview");
+      setIsConsoleOpen(true);
       setOutput("Preview updated.");
       return;
     }
     
+    setConsoleMode("output");
+    setIsConsoleOpen(true);
     setIsRunning(true);
     setOutput("Running...");
     try {
@@ -359,51 +367,77 @@ export function PlaygroundPage() {
       <div className="playground-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {/* Editor Section */}
-          <div className="tour-pg-editor" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-            <Editor
-              height="100%"
-              theme="vs-dark"
-              language={activeFile.language}
-              value={activeFile.code}
-              onChange={handleCodeChange}
-              options={{
-                fontSize: 14,
-                lineHeight: 24,
-                minimap: { enabled: false },
-                wordWrap: 'on',
-                padding: { top: 20 },
-                fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace"
-              }}
-            />
-          </div>
+          {(activeMainTab === 'editor' || isSplitView) && (
+            <div className="tour-pg-editor" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+              <Editor
+                height="100%"
+                theme="vs-dark"
+                language={activeFile.language}
+                value={activeFile.code}
+                onChange={handleCodeChange}
+                options={{
+                  fontSize: 14,
+                  lineHeight: 24,
+                  minimap: { enabled: false },
+                  wordWrap: 'on',
+                  padding: { top: 20 },
+                  fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace"
+                }}
+              />
+            </div>
+          )}
 
           {/* Preview Section */}
-          <div style={{ width: '40%', display: 'flex', flexDirection: 'column', background: '#fff', borderLeft: '1px solid var(--line)', minHeight: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 16px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b' }}>
-              <Globe size={14} />
-              <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Web Preview</span>
+          {(activeMainTab === 'preview' || (isSplitView && activeMainTab === 'editor')) && (
+            <div style={{ width: isSplitView ? '40%' : '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderLeft: isSplitView ? '1px solid var(--line)' : 'none', minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '8px 16px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#64748b' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Globe size={14} />
+                  <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Web Preview</span>
+                </div>
+                {activeMainTab === 'preview' && !isSplitView && (
+                  <button onClick={() => { setActiveMainTab('editor'); setIsSplitView(true); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }} title="Close Full Screen">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <iframe 
+                srcDoc={previewDoc}
+                title="preview"
+                style={{ flex: 1, border: 'none', width: '100%' }}
+              />
             </div>
-            <iframe 
-              srcDoc={previewDoc}
-              title="preview"
-              style={{ flex: 1, border: 'none', width: '100%' }}
-            />
-          </div>
+          )}
         </div>
 
+        {isConsoleOpen && (
           <ConsolePanel
             output={output}
-            preview={undefined}
+            preview={{ showPreview: true, previewDoc }}
             style={{ height: `${consoleHeight}px`, flex: "0 0 auto", borderTop: '2px solid var(--primary-orange)' }}
             onResizeStart={(e) => {
               e.preventDefault();
               resizeStart.current = { y: e.clientY, height: consoleHeight };
               setIsResizing(true);
             }}
-          onClear={() => setOutput("Ready.")}
-          stdin={stdin}
-          setStdin={setStdin}
-        />
+            onClear={() => setOutput("Ready.")}
+            stdin={stdin}
+            setStdin={setStdin}
+            panelMode={consoleMode}
+            setPanelMode={setConsoleMode}
+            onOpenSplitPreview={() => {
+              setActiveMainTab('editor');
+              setIsSplitView(true);
+              setIsConsoleOpen(false);
+            }}
+            onOpenFullPreview={() => {
+              setActiveMainTab('preview');
+              setIsSplitView(false);
+              setIsConsoleOpen(false);
+            }}
+            onClose={() => setIsConsoleOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

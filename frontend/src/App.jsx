@@ -12,7 +12,6 @@ import { PlaygroundPage } from "./pages/PlaygroundPage";
 import FeedbackPage from "./pages/FeedbackPage";
 import Loader from "./components/Loader";
 import { Footer } from "./components/Footer";
-import { TourManager } from "./components/TourManager";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfServicePage } from "./pages/TermsOfServicePage";
 import { CodeOfConductPage } from "./pages/CodeOfConductPage";
@@ -20,6 +19,8 @@ import { useLocation } from "react-router-dom";
 import { trackPageView } from "./lib/analytics";
 import { useAuth } from "./hooks/useAuth";
 import { API_URL } from "./config";
+
+import { socket } from "./lib/socket";
 
 function LoaderManager({ children }) {
   const location = useLocation();
@@ -34,11 +35,16 @@ function LoaderManager({ children }) {
   }, []);
 
   useEffect(() => {
-    // Global Community Theme Sync
+    // Global Community Theme Sync & Online Presence
     if (!user) {
       document.documentElement.dataset.community = "sider";
       return;
     }
+    
+    // Connect socket for global online presence tracking
+    socket.connect();
+    socket.emit("user:presence", user.uid);
+
     fetch(`${API_URL}/api/profiles/${user.uid}`)
       .then(r => r.json())
       .then(profile => {
@@ -66,7 +72,6 @@ function LoaderManager({ children }) {
       <Loader visible={loading} />
       {children}
       {showFooter && <Footer />}
-      <TourManager />
     </>
   );
 }

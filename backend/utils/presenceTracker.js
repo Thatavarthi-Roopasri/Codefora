@@ -1,0 +1,3 @@
+// Tracks global online presence across the site
+// Map<userId, Set<socketId>>
+export const globalOnlineUsers = new Map();

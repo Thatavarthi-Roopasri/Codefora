@@ -417,6 +417,16 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     socket.emit("room:settings", { roomId: activeRoomId, max, visibility, allowAi, allowCopyPaste });
   }
 
+  function setProblem(problemId) {
+    const isHost = Boolean(me && (me.role === "Host" || (me.userId && room?.ownerUserId === me.userId)));
+    if (!isHost) {
+      alert("You don't have host permission.");
+      return;
+    }
+    console.log("Emitting room:set_problem", { roomId: activeRoomId, problemId });
+    socket.emit("room:set_problem", { roomId: activeRoomId, problemId });
+  }
+
   function createFile(fileName, language, code) {
     if (!fileName.trim() || !canEdit) return;
     socket.emit("file:create", { roomId: activeRoomId, fileName, language, code });
@@ -1011,7 +1021,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
       updateCode, updateFileCode, sendChat, sendSticker, endRoom, createFile, deleteActiveFile,
       updateRole, kickUser, runCode, submitCode, askAi, toggleMic, forceJoin, clearOutput,
       updateNotes, drawNote, startTimer, stopTimer, setTimerMode, pushHistory, saveWork, changeFileLanguage,
-      updateRoomSettings,
+      updateRoomSettings, setProblem,
       setPreviewTarget,
       setExpectedActiveName: (name) => {
         expectedActiveNameRef.current = name;

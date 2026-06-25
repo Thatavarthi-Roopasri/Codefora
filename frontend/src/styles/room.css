@@ -18,6 +18,26 @@
     --selection-bg: rgba(var(--primary-rgb), 0.2);
   }
 
+  .room-layout-wrapper {
+    --bg-primary: rgba(2, 8, 23, 0.3);
+    --bg-secondary: rgba(15, 23, 42, 0.4);
+    --bg-tertiary: rgba(30, 41, 59, 0.5);
+    --panel: rgba(11, 25, 40, 0.5);
+    --glass-bg: rgba(15, 23, 42, 0.5);
+    --console-bg: rgba(21, 21, 37, 0.5);
+  }
+
+  .room-layout-wrapper .left-nav-bar,
+  .room-layout-wrapper .topbar,
+  .room-layout-wrapper .sidebar-panel,
+  .room-layout-wrapper .console-panel,
+  .room-layout-wrapper .editor-panel,
+  .room-layout-wrapper .workspace-sidebar {
+    background-color: rgba(15, 23, 42, 0.4) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    backdrop-filter: blur(12px) !important;
+  }
+
   .workspace {
     height: 100vh;
     display: flex;
@@ -2233,4 +2253,131 @@
     color: #5b6973 !important;
     box-shadow: none !important;
     cursor: not-allowed !important;
+  }
+
+  /* ========================================================= */
+  /* MOBILE RESPONSIVE OVERRIDES                               */
+  /* ========================================================= */
+  @media (max-width: 768px) {
+    .mobile-hidden {
+      display: none !important;
+    }
+
+    /* 1. Global Layout Reordering */
+    .room-layout-wrapper {
+      flex-direction: column !important;
+    }
+
+    /* 2. Left NavBar to Bottom NavBar */
+    .left-nav-bar {
+      width: 100% !important;
+      height: 60px !important;
+      min-height: 60px !important;
+      flex-direction: row !important;
+      order: 10 !important; /* Move to bottom */
+      border-right: none !important;
+      border-top: 1px solid var(--glass-border) !important;
+      padding: 0 10px !important;
+      overflow-x: auto !important;
+      overflow-y: hidden !important;
+      align-items: center !important;
+      z-index: 1000 !important;
+    }
+
+    .nav-logo-container {
+      display: none !important; /* Hide logo on mobile bottom nav */
+    }
+
+    .nav-items-top, .nav-items-bottom {
+      flex-direction: row !important;
+      width: auto !important;
+      height: 100% !important;
+      align-items: center !important;
+      gap: 16px !important;
+      margin: 0 !important;
+    }
+
+    .nav-items-bottom {
+      margin-left: auto !important; /* Push settings/info to the right */
+    }
+
+    .left-nav-bar.expanded {
+      width: 100% !important; /* Prevent horizontal expansion */
+    }
+
+    .nav-item {
+      width: 44px !important;
+      height: 44px !important;
+      min-width: 44px !important;
+      margin: 0 !important;
+      justify-content: center !important;
+      padding: 0 !important;
+    }
+
+    .nav-item span {
+      display: none !important; /* Always hide text on mobile */
+    }
+
+    .nav-item .icon-wrapper {
+      width: 100% !important;
+      height: 100% !important;
+      background: transparent !important;
+      border: none !important;
+    }
+    
+    .nav-item.active .icon-wrapper {
+      background: rgba(var(--primary-rgb), 0.15) !important;
+      border-color: rgba(var(--primary-rgb), 0.3) !important;
+    }
+
+    /* 3. Full Screen Sidebars (Workspace) */
+    .workspace-sidebar {
+      position: absolute !important;
+      top: 52px !important; /* Below TopBar */
+      bottom: 60px !important; /* Above BottomNav */
+      left: 0 !important;
+      right: 0 !important;
+      width: 100% !important;
+      z-index: 500 !important;
+      background: var(--bg-primary) !important;
+      border-right: none !important;
+    }
+
+    /* 4. Disable Split View (Force Column) */
+    .workspace-main-v3 .middle-column {
+      flex-direction: column !important;
+    }
+
+    .workspace-main-v3 .middle-column > div {
+      width: 100% !important;
+    }
+
+    .right-resize-handle {
+      display: none !important;
+    }
+
+    /* 5. TopBar Compaction */
+    .topbar {
+      padding: 0 12px !important;
+    }
+
+    .room-heading h1 {
+      font-size: 1rem !important;
+      max-width: 150px !important;
+    }
+
+    .top-actions {
+      gap: 6px !important;
+    }
+
+    .top-actions .button {
+      padding: 0 10px !important;
+      min-width: 0 !important;
+      width: auto !important;
+    }
+
+    /* 6. Console Constraint */
+    .console-panel {
+      max-height: 40vh !important;
+    }
   }
