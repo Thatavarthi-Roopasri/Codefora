@@ -17,6 +17,8 @@ import { Footer } from "./components/Footer";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfServicePage } from "./pages/TermsOfServicePage";
 import { CodeOfConductPage } from "./pages/CodeOfConductPage";
+import { RefundPolicyPage } from "./pages/RefundPolicyPage";
+import { ShippingDeliveryPage } from "./pages/ShippingDeliveryPage";
 import { useLocation } from "react-router-dom";
 import { trackPageView } from "./lib/analytics";
 import { useAuth } from "./hooks/useAuth";
@@ -71,7 +73,7 @@ function LoaderManager({ children }) {
     return () => clearTimeout(t);
   }, [location.pathname]);
 
-  const footerRoutes = ['/home', '/rooms', '/problems', '/feedback', '/profile', '/privacy', '/terms', '/conduct'];
+  const footerRoutes = ['/home', '/rooms', '/problems', '/feedback', '/profile', '/privacy', '/terms', '/conduct', '/refund-policy', '/shipping', '/about', '/services', '/contact'];
   const showFooter = footerRoutes.includes(location.pathname);
 
   return (
@@ -107,6 +109,11 @@ const router = createBrowserRouter([
       { path: "privacy", element: <PrivacyPolicyPage /> },
       { path: "terms", element: <TermsOfServicePage /> },
       { path: "conduct", element: <CodeOfConductPage /> },
+      { path: "refund-policy", element: <RefundPolicyPage /> },
+      { path: "shipping", element: <ShippingDeliveryPage /> },
+      { path: "about", element: <HomePage /> },
+      { path: "services", element: <HomePage /> },
+      { path: "contact", element: <FeedbackPage /> },
       { path: "room/:roomId", element: <RoomPage /> },
       { path: "code/:roomId", element: <RoomPage /> },
       { path: "code/private/:roomId", element: <RoomPage /> }
