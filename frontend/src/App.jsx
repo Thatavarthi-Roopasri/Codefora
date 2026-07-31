@@ -4,23 +4,28 @@ import { useTheme } from "./hooks/useTheme";
 import HomePage from "./pages/HomePage";
 import SignInPage from "./pages/SignInPage";
 import { ProblemsPage } from "./pages/ProblemsPage";
+import { ChallengesPage } from "./pages/ChallengesPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RoomsPage } from "./pages/RoomsPage";
 import { RoomPage } from "./pages/RoomPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
+import { DryRunPage } from "./pages/DryRunPage";
 import FeedbackPage from "./pages/FeedbackPage";
 import Loader from "./components/Loader";
 import { Footer } from "./components/Footer";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 import { TermsOfServicePage } from "./pages/TermsOfServicePage";
 import { CodeOfConductPage } from "./pages/CodeOfConductPage";
+import { RefundPolicyPage } from "./pages/RefundPolicyPage";
+import { ShippingDeliveryPage } from "./pages/ShippingDeliveryPage";
 import { useLocation } from "react-router-dom";
 import { trackPageView } from "./lib/analytics";
 import { useAuth } from "./hooks/useAuth";
 import { API_URL } from "./config";
 
 import { socket } from "./lib/socket";
+import GlobalAiChat from "./components/GlobalAiChat";
 
 function LoaderManager({ children }) {
   const location = useLocation();
@@ -31,6 +36,10 @@ function LoaderManager({ children }) {
     // initial show
     setLoading(true);
     const t = setTimeout(() => setLoading(false), 1000);
+    
+    // Silently ping the Hugging Face space to wake it up from sleep/cold-start
+    fetch("https://roopasri06-codefora-lora-api.hf.space/").catch(() => {});
+    
     return () => clearTimeout(t);
   }, []);
 
@@ -64,13 +73,14 @@ function LoaderManager({ children }) {
     return () => clearTimeout(t);
   }, [location.pathname]);
 
-  const footerRoutes = ['/home', '/rooms', '/problems', '/feedback', '/profile', '/privacy', '/terms', '/conduct'];
+  const footerRoutes = ['/home', '/rooms', '/problems', '/feedback', '/profile', '/privacy', '/terms', '/conduct', '/refund-policy', '/shipping', '/about', '/services', '/contact'];
   const showFooter = footerRoutes.includes(location.pathname);
 
   return (
     <>
       <Loader visible={loading} />
       {children}
+      <GlobalAiChat />
       {showFooter && <Footer />}
     </>
   );
@@ -89,13 +99,21 @@ const router = createBrowserRouter([
       { path: "home", element: <HomePage /> },
       { path: "rooms", element: <RoomsPage /> },
       { path: "problems", element: <ProblemsPage /> },
+      { path: "problems/:id/dry-run/:dryRunId", element: <DryRunPage /> },
+      { path: "challenges", element: <ChallengesPage /> },
       { path: "admin", element: <AdminDashboardPage /> },
       { path: "profile", element: <ProfilePage /> },
+      { path: "profile/:userId", element: <ProfilePage /> },
       { path: "playground", element: <PlaygroundPage /> },
       { path: "feedback", element: <FeedbackPage /> },
       { path: "privacy", element: <PrivacyPolicyPage /> },
       { path: "terms", element: <TermsOfServicePage /> },
       { path: "conduct", element: <CodeOfConductPage /> },
+      { path: "refund-policy", element: <RefundPolicyPage /> },
+      { path: "shipping", element: <ShippingDeliveryPage /> },
+      { path: "about", element: <HomePage /> },
+      { path: "services", element: <HomePage /> },
+      { path: "contact", element: <FeedbackPage /> },
       { path: "room/:roomId", element: <RoomPage /> },
       { path: "code/:roomId", element: <RoomPage /> },
       { path: "code/private/:roomId", element: <RoomPage /> }

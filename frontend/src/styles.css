@@ -2035,11 +2035,12 @@ label {
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   color: var(--text);
-  background: rgba(8, 18, 30, 0.96);
-  border: 1px solid rgba(var(--primary-rgb), 0.26);
-  border-radius: 14px;
+  background: rgba(8, 18, 30, 0.45);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  border-radius: 16px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   transform: translateY(18px) scale(0.98);
   opacity: 0;
   pointer-events: none;
@@ -2106,8 +2107,199 @@ label {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   padding: 16px;
+}
+
+.ai-message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: 100%;
+}
+
+.ai-message--user {
+  flex-direction: row-reverse;
+}
+
+.ai-message .avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.ai-message--user .avatar {
+  background: var(--primary);
+  color: var(--button-text-on-primary);
+}
+
+.ai-message--assistant .avatar {
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.ai-message .msg-bubble {
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--heading);
+  max-width: 85%;
+  word-wrap: break-word;
+}
+
+.ai-floating-greeting {
+  position: fixed;
+  bottom: 90px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(8, 18, 30, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 16px;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  color: var(--heading);
+  cursor: pointer;
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 300px;
+  transition: all 0.2s ease;
+}
+
+.ai-floating-greeting:hover {
+  background: rgba(8, 18, 30, 0.6);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.ai-floating-greeting .greeting-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+}
+
+.ai-floating-greeting .greeting-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ai-floating-greeting p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.ai-floating-greeting .greeting-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.ai-floating-greeting .greeting-close:hover {
+  color: var(--heading);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ai-message--user .msg-bubble {
+  background: rgba(var(--primary-rgb), 0.15);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  border-top-right-radius: 4px;
+}
+
+.ai-message--assistant .msg-bubble {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-top-left-radius: 4px;
+}
+
+.ai-message .msg-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.ai-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.ai-fab-img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.ai-header-img {
+  width: 18px;
+  height: 18px;
+  object-fit: cover;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+.ai-dom-highlight {
+  position: relative;
+  z-index: 9999 !important;
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px rgba(var(--primary-rgb), 0.8), 0 0 24px rgba(var(--primary-rgb), 0.8) !important;
+  animation: aiPulseGlow 1.5s infinite alternate !important;
+  transition: all 0.3s ease;
+}
+
+@keyframes aiPulseGlow {
+  0% {
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.5), 0 0 10px rgba(var(--primary-rgb), 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(var(--primary-rgb), 1), 0 0 30px rgba(var(--primary-rgb), 1);
+  }
+}
+
+.ai-message .msg-bubble p + p {
+  margin-top: 8px;
+}
+
+.ai-message--assistant .feedback-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 12px;
+  border-top: 1px dashed rgba(255,255,255,0.1);
+  padding-top: 8px;
 }
 
 .problem-ai-input {

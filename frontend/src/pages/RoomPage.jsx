@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, useBlocker, useLocation } from "react-router-dom";
-import { Loader2, AlertTriangle, MessageSquare, X, ArrowLeft, PanelLeftClose } from "lucide-react";
+import { Loader2, AlertTriangle, MessageSquare, X as XIcon, ArrowLeft, PanelLeftClose } from "lucide-react";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { TopBar } from "../components/room/TopBar";
 import { EditorPanel } from "../components/room/EditorPanel";
@@ -13,6 +13,7 @@ import { FloatingProblem } from "../components/room/FloatingProblem";
 import { ProblemPanel } from "../components/room/ProblemPanel";
 import { FilesPanel } from "../components/room/FilesPanel";
 import { NotesModal } from "../components/room/NotesModal";
+import { copyToClipboard } from "../lib/clipboard";
 import { TimeTravelModal } from "../components/room/TimeTravelModal";
 import { LeftNavBar } from "../components/room/LeftNavBar";
 import { FooterBar } from "../components/room/FooterBar";
@@ -21,7 +22,10 @@ import { WebPreviewFull } from "../components/room/WebPreviewFull";
 import { problems } from "../data/problems";
 import { getUsername, saveUsername } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
+import { api } from "../api/client";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
+import { TargetViewer } from "../components/room/TargetViewer";
+import { ScoreModal } from "../components/room/ScoreModal";
 
 export function RoomPage() {
   const { roomId } = useParams();
@@ -45,6 +49,7 @@ export function RoomPage() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const isNotesView = searchParams.get("view") === "notes";
+
 
   const [problemSearch, setProblemSearch] = useState("");
   const [problemDifficulty, setProblemDifficulty] = useState("All");
@@ -93,6 +98,56 @@ export function RoomPage() {
     actions
   } = useRoomSession(roomId, joinName, user?.uid, isBypassingBlocker);
 
+  const isChallenge = room?.isChallenge || location.state?.challengeMode;
+  const targetImage = room?.targetImage || location.state?.targetImage;
+  const difficulty = location.state?.difficulty || 'easy';
+  const [isScoring, setIsScoring] = useState(false);
+  const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
+  const [scoreData, setScoreData] = useState(null);
+
+  const handleGenerateNewChallenge = async () => {
+    setIsGeneratingChallenge(true);
+    try {
+      const targetPayload = await api.request("/api/challenge/generate", {
+        method: "POST",
+        body: JSON.stringify({ difficulty })
+      });
+      if (targetPayload.targetImage) {
+        actions.setProblem("ui-battle", targetPayload.targetImage);
+      }
+    } catch (err) {
+      alert("Failed to generate new challenge: " + err.message);
+    } finally {
+      setIsGeneratingChallenge(false);
+    }
+  };
+
+  const handleChallengeSubmit = async () => {
+    setIsScoring(true);
+    try {
+      const htmlFile = files.find(f => f.name.endsWith('.html'));
+      const cssFile = files.find(f => f.name.endsWith('.css'));
+      let userCode = htmlFile?.code || '';
+      if (cssFile?.code) {
+        if (userCode.includes('</head>')) {
+          userCode = userCode.replace('</head>', `<style>${cssFile.code}</style></head>`);
+        } else {
+          userCode += `<style>${cssFile.code}</style>`;
+        }
+      }
+
+      const data = await api.request("/api/challenge/submit", {
+        method: 'POST',
+        body: JSON.stringify({ userCode, targetImage })
+      });
+      setScoreData(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
   const [floatingMsgs, setFloatingMsgs] = useState([]);
   const [consoleHeight, setConsoleHeight] = useState(280);
   const [sidebarWidths, setSidebarWidths] = useState({ problem: 450, users: 250, files: 250 });
@@ -123,6 +178,38 @@ export function RoomPage() {
     }
     prevProblemId.current = room?.problemId;
   }, [room]);
+
+  // Join sound and toast
+  const previousUsersCount = useRef(0);
+  useEffect(() => {
+    if (users.length > previousUsersCount.current && previousUsersCount.current > 0) {
+      const newUsers = users.slice(previousUsersCount.current);
+      newUsers.forEach(nu => {
+        if (nu.socketId === permissions.me?.socketId) return;
+        
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          oscillator.type = 'sine';
+          oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5
+          oscillator.frequency.exponentialRampToValueAtTime(1046.50, audioContext.currentTime + 0.1); // C6
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(0.05, audioContext.currentTime + 0.05);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.3);
+        } catch(e) {}
+        
+        const id = Date.now() + Math.random();
+        setFloatingMsgs(prev => [...prev, { floatId: id, user: "System", text: `${nu.name} joined the room`, isSystem: true }]);
+        setTimeout(() => setFloatingMsgs(prev => prev.filter(m => m.floatId !== id)), 4000);
+      });
+    }
+    previousUsersCount.current = users.length;
+  }, [users, permissions.me]);
 
   // --- Leave Room Navigation Blocker ---
   const [showLeavePrompt, setShowLeavePrompt] = useState(false);
@@ -185,6 +272,14 @@ export function RoomPage() {
       setStdin(activeProblem.tests[0].input);
     }
   }, [activeProblem]);
+
+  useEffect(() => {
+    if (activeFile) {
+      localStorage.setItem("current_code", activeFile.code || "");
+      localStorage.setItem("current_language", activeFile.language || "");
+      localStorage.setItem("current_problem_title", `Room File: ${activeFile.name}`);
+    }
+  }, [activeFile]);
 
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -377,7 +472,11 @@ export function RoomPage() {
       // Ctrl + Shift + C -> Copy Room Invite Link
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
         e.preventDefault();
-        navigator.clipboard.writeText(window.location.href);
+        copyToClipboard(window.location.href).then(() => {
+          alert("Invite link copied!");
+        }).catch(() => {
+          alert("Failed to copy invite link.");
+        });
         return;
       }
     };
@@ -419,8 +518,8 @@ export function RoomPage() {
       <div className="room-loading">
         <AlertTriangle size={40} />
         <p>Could not join room: {joinError.reason || "unknown error"}</p>
-        <button className="button primary" onClick={() => navigate("/rooms")}>
-          Back to Rooms
+        <button className="comms-close-cyber" onClick={() => setShowUsersModal(false)} aria-label="Close Users">
+          <XIcon size={16}/>
         </button>
       </div>
     );
@@ -464,13 +563,17 @@ export function RoomPage() {
         actions.runCode(stdin);
       }}
       onSubmit={() => {
-        setIsConsoleOpen(true);
-        actions.submitCode(activeProblem);
-        setShowTimeTravel(true);
+        if (isChallenge) {
+          handleChallengeSubmit();
+        } else {
+          setIsConsoleOpen(true);
+          actions.submitCode(activeProblem);
+          setShowTimeTravel(true);
+        }
       }}
       isRunningCode={compiler.isRunningCode}
-      isSubmittingCode={compiler.isSubmittingCode}
-      canSubmit={!!activeProblem && !compiler.isRunningCode && !compiler.isSubmittingCode}
+      isSubmittingCode={compiler.isSubmittingCode || isScoring}
+      canSubmit={(!!activeProblem || isChallenge) && !compiler.isRunningCode && !compiler.isSubmittingCode}
       timer={timer}
       permissions={permissions}
       actions={actions}
@@ -524,6 +627,7 @@ export function RoomPage() {
         users={users}
         permissions={permissions}
         actions={actions}
+        isAnyMicOn={users.some(u => u.mic)}
       />
 
       {activeSidebarTab && (
@@ -540,18 +644,33 @@ export function RoomPage() {
                 >
                   <PanelLeftClose size={16} />
                 </button>
-                {activeProblem ? (
+                {activeProblem || isChallenge ? (
                   <>
-                    <ProblemPanel problem={activeProblem} />
+                    {isChallenge ? (
+                      <TargetViewer targetImage={targetImage} difficulty={difficulty} />
+                    ) : (
+                      <ProblemPanel problem={activeProblem} />
+                    )}
                     {permissions.isHost && (
                       <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)", background: 'transparent', marginTop: 'auto' }}>
-                        <button 
-                          className="button secondary" 
-                          style={{ width: "100%" }}
-                          onClick={() => actions.setProblem(null)}
-                        >
-                          Change Problem
-                        </button>
+                        {isChallenge ? (
+                          <button 
+                            className="button secondary" 
+                            style={{ width: "100%" }}
+                            disabled={isGeneratingChallenge}
+                            onClick={handleGenerateNewChallenge}
+                          >
+                            {isGeneratingChallenge ? "Generating..." : "New Challenge"}
+                          </button>
+                        ) : (
+                          <button 
+                            className="button secondary" 
+                            style={{ width: "100%" }}
+                            onClick={() => actions.setProblem(null)}
+                          >
+                            Change Problem
+                          </button>
+                        )}
                       </div>
                     )}
                   </>
@@ -780,8 +899,20 @@ export function RoomPage() {
                 typing={typing}
                 typingCursors={typingCursors}
                 permissions={permissions}
-                onChange={actions.updateCode}
-                onUpdateFileCode={actions.updateFileCode}
+                onChange={(val) => {
+                  localStorage.setItem("current_code", val || "");
+                  localStorage.setItem("current_language", activeFile?.language || "");
+                  localStorage.setItem("current_problem_title", `Room File: ${activeName}`);
+                  actions.updateCode(val);
+                }}
+                onUpdateFileCode={(filename, code) => {
+                  if (filename === activeName) {
+                    localStorage.setItem("current_code", code || "");
+                    localStorage.setItem("current_language", activeFile?.language || "");
+                    localStorage.setItem("current_problem_title", `Room File: ${filename}`);
+                  }
+                  actions.updateFileCode(filename, code);
+                }}
                 onCreateFile={actions.createFile}
                 onExpectActiveName={actions.setExpectedActiveName}
                 onDeleteFile={actions.deleteActiveFile}
@@ -803,13 +934,17 @@ export function RoomPage() {
                   actions.runCode(stdin);
                 }}
                 onSubmit={() => {
-                  setIsConsoleOpen(true);
-                  actions.submitCode(activeProblem);
-                  setShowTimeTravel(true);
+                  if (isChallenge) {
+                    handleChallengeSubmit();
+                  } else {
+                    setIsConsoleOpen(true);
+                    actions.submitCode(activeProblem);
+                    setShowTimeTravel(true);
+                  }
                 }}
                 isRunningCode={compiler.isRunningCode}
-                isSubmittingCode={compiler.isSubmittingCode}
-                canSubmit={!!activeProblem && !compiler.isRunningCode && !compiler.isSubmittingCode}
+                isSubmittingCode={compiler.isSubmittingCode || isScoring}
+                canSubmit={(!!activeProblem || isChallenge) && !compiler.isRunningCode && !compiler.isSubmittingCode}
               />
               {isConsoleOpen && (
                 <ConsolePanel
@@ -852,11 +987,16 @@ export function RoomPage() {
                     actions.runCode(stdin);
                   }}
                   onSubmit={() => {
-                    actions.submitCode(activeProblem);
-                    setShowTimeTravel(true);
+                    if (isChallenge) {
+                      handleChallengeSubmit();
+                    } else {
+                      actions.submitCode(activeProblem);
+                      setShowTimeTravel(true);
+                    }
                   }}
                   activeProblem={activeProblem}
                   canSubmit={permissions.canEdit}
+                  isSubmitting={isScoring}
                 />
               )}
             </div>
@@ -989,6 +1129,18 @@ export function RoomPage() {
               </div>
             </div>
           </div>
+        )}
+        
+        {/* Challenge Score Modal */}
+        {scoreData && (
+          <ScoreModal 
+            isOpen={!!scoreData}
+            onClose={() => setScoreData(null)}
+            score={scoreData.score}
+            feedback={scoreData.feedback}
+            userImage={scoreData.userImage}
+            targetImage={targetImage}
+          />
         )}
       </div>
     </div>

@@ -23,13 +23,13 @@ const FILE_TYPES = [
 export const BOILERPLATES = {
   javascript: "function solution() {\n  // write your code here\n}\n\nconsole.log(solution());",
   typescript: "function solution(): void {\n  // write your code here\n}\n\nconsole.log(solution());",
-  python: "def solution():\n    # write your code here\n    pass\n\nif __name__ == '__main__':\n    solution()",
-  java: "public class Main {\n    public static void main(String[] args) {\n        // write your code here\n    }\n}",
-  c: "#include <stdio.h>\n\nint main() {\n    // write your code here\n    return 0;\n}",
-  cpp: "#include <iostream>\nusing namespace std;\n\nint main() {\n    // write your code here\n    return 0;\n}",
-  csharp: "using System;\n\nclass Program {\n    static void Main() {\n        // write your code here\n    }\n}",
-  go: "package main\n\nimport \"fmt\"\n\nfunc main() {\n    // write your code here\n}",
-  rust: "fn main() {\n    // write your code here\n}",
+  python: "import sys\nimport math\nfrom collections import defaultdict, deque\n\ndef solution():\n    # write your code here\n    pass\n\nif __name__ == '__main__':\n    solution()",
+  java: "import java.util.*;\nimport java.io.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // write your code here\n    }\n}",
+  c: "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n\nint main() {\n    // write your code here\n    return 0;\n}",
+  cpp: "#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <map>\n#include <set>\n#include <cmath>\nusing namespace std;\n\nint main() {\n    // write your code here\n    return 0;\n}",
+  csharp: "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nusing System.Text;\n\nclass Program {\n    static void Main() {\n        // write your code here\n    }\n}",
+  go: "package main\n\nimport (\n\t\"fmt\"\n\t\"math\"\n\t\"strings\"\n)\n\nfunc main() {\n    // write your code here\n}",
+  rust: "use std::io;\nuse std::collections::{HashMap, HashSet};\nuse std::cmp;\n\nfn main() {\n    // write your code here\n}",
   php: "<?php\n// write your code here\n?>",
   sql: "-- write your sql here",
   html: "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Document</title>\n    <!-- <link rel=\"stylesheet\" href=\"style.css\"> -->\n</head>\n<body>\n    \n    <!-- <script src=\"script.js\"></script> -->\n</body>\n</html>",
@@ -68,10 +68,21 @@ export function FilesPanel({
 
   function createFile() {
     const isNewFileContext = newFileName.trim().length > 0;
-    const activeLanguage = isNewFileContext ? newFileType : (activeFile?.language || newFileType || "javascript");
-    const selectedType = FILE_TYPES.find((type) => type.language === activeLanguage) || FILE_TYPES[0];
     const cleanName = newFileName.trim();
     if (!cleanName) return;
+    
+    let determinedLanguage = isNewFileContext ? newFileType : (activeFile?.language || newFileType || "javascript");
+    
+    // If the user explicitly typed an extension, override the dropdown selection
+    if (cleanName.includes(".")) {
+      const ext = "." + cleanName.split(".").pop();
+      const typeMatch = FILE_TYPES.find(t => t.extension === ext);
+      if (typeMatch) {
+        determinedLanguage = typeMatch.language;
+      }
+    }
+    
+    const selectedType = FILE_TYPES.find((type) => type.language === determinedLanguage) || FILE_TYPES[0];
     const fileName = cleanName.includes(".") ? cleanName : `${cleanName}${selectedType.extension}`;
     const boilerplate = BOILERPLATES[selectedType.language] || "";
     onCreateFile(fileName, selectedType.language, boilerplate);

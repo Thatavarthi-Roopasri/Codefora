@@ -2,9 +2,177 @@
   "4aY3w2Zz4kh4D15rd58V8xMZrk72": {
     "profile": {
       "stats": {
-        "roomsJoined": 2
+        "roomsJoined": 3
       },
       "activities": [
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge X3G1",
+          "subtext": "Problem Solving",
+          "timestamp": 1783527140052
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge JWW0",
+          "subtext": "Problem Solving",
+          "timestamp": 1783526630154
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge T17E",
+          "subtext": "Problem Solving",
+          "timestamp": 1783526118398
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 1ABQ",
+          "subtext": "Problem Solving",
+          "timestamp": 1783525859849
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 1ABQ",
+          "subtext": "Problem Solving",
+          "timestamp": 1783525730276
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 1ABQ",
+          "subtext": "Problem Solving",
+          "timestamp": 1783525410089
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge ILBQ",
+          "subtext": "Problem Solving",
+          "timestamp": 1783525149688
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 0I65",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524974160
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge QFJ1",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524700884
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge Z7VP",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524668443
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524579683
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524555715
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524457719
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524403401
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524351506
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524333750
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge H6Y9",
+          "subtext": "Problem Solving",
+          "timestamp": 1783524140209
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge SN9C",
+          "subtext": "Problem Solving",
+          "timestamp": 1783523985080
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 612Y",
+          "subtext": "Problem Solving",
+          "timestamp": 1783523949382
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge DATM",
+          "subtext": "Problem Solving",
+          "timestamp": 1783523372094
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge 0PYU",
+          "subtext": "Problem Solving",
+          "timestamp": 1783523341440
+        },
+        {
+          "type": "room_join",
+          "text": "Joined User's UI Challenge UTZQ",
+          "subtext": "Problem Solving",
+          "timestamp": 1783522634343
+        },
+        {
+          "type": "room_join",
+          "text": "Joined ganesh vanamala's Room",
+          "subtext": "Collaboration",
+          "timestamp": 1783166396198
+        },
+        {
+          "type": "profile_update",
+          "text": "Updated Profile",
+          "subtext": "Profile updated successfully",
+          "timestamp": 1783081386852
+        },
+        {
+          "type": "profile_update",
+          "text": "Updated Profile",
+          "subtext": "Profile updated successfully",
+          "timestamp": 1783081375608
+        },
+        {
+          "type": "profile_update",
+          "text": "Updated Profile",
+          "subtext": "Profile updated successfully",
+          "timestamp": 1783081368214
+        },
+        {
+          "type": "profile_update",
+          "text": "Updated Profile",
+          "subtext": "Profile updated successfully",
+          "timestamp": 1783081360996
+        },
+        {
+          "type": "profile_update",
+          "text": "Updated Profile",
+          "subtext": "Profile updated successfully",
+          "timestamp": 1783079054777
+        },
         {
           "type": "room_join",
           "text": "Joined Problem Room: Pattern 1: Right-Angled Triangle of Stars",
@@ -17,8 +185,13 @@
           "subtext": "Problem Solving",
           "timestamp": 1781209155215
         }
-      ]
+      ],
+      "displayName": "ganesh vanamala",
+      "bio": "Building consistency one problem at a time.",
+      "emotionId": "loop:Screenshot 2026-05-10 191715.png",
+      "community": "loop",
+      "friendCode": "13219873"
     },
-    "updatedAt": 1781209285509
+    "updatedAt": 1783527140052
   }
 }

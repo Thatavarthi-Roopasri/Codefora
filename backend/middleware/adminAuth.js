@@ -1,16 +1,38 @@
-export function adminAuth(request, response, next) {
-  const token = request.headers["x-admin-token"];
+import { admin, createFirestore } from "../config/firebase.js";
+
+const db = createFirestore();
+const SUPER_ADMIN_EMAIL = "ganeshvanamala16@gmail.com";
+
+export async function adminAuth(request, response, next) {
+  const authHeader = request.headers["authorization"];
   
-  // For this project, we'll keep it simple: 
-  // Any non-empty token is "authenticated" for now if we want to bypass strict JWT,
-  // but let's at least check if it exists.
-  // The user requested: "store in local storage so that no users can simply chage url as /admin and login"
-  
-  if (!token) {
-    return response.status(403).json({ error: "Access denied. Admin token required." });
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return response.status(401).json({ error: "Access denied. Admin token required." });
   }
 
-  // Ideally, verify the token against a session store or decrypt a JWT.
-  // For now, we'll proceed if the token is present.
-  next();
+  const token = authHeader.split("Bearer ")[1];
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // 1. Super Admin Check
+    if (decodedToken.email === SUPER_ADMIN_EMAIL) {
+      request.adminUser = { ...decodedToken, isSuperAdmin: true };
+      return next();
+    }
+
+    // 2. Dynamic Admin Check (Firestore)
+    if (db && !db.isMock) {
+      const userDoc = await db.collection("users").doc(decodedToken.uid).get();
+      if (userDoc.exists && userDoc.data().profile?.role === "admin") {
+        request.adminUser = { ...decodedToken, isSuperAdmin: false };
+        return next();
+      }
+    }
+
+    return response.status(403).json({ error: "Forbidden. You are not an authorized admin." });
+  } catch (error) {
+    console.error("Admin Auth Error:", error.message);
+    return response.status(403).json({ error: "Invalid or expired admin token." });
+  }
 }

@@ -38,11 +38,10 @@ export default function SignInPage() {
       if (account?.uid) localStorage.setItem("codefora_user_id", account.uid);
       if (role === "admin") {
         localStorage.setItem("codefora_role", "admin");
-        localStorage.setItem("codefora_admin_token", "firebase_master_admin");
+
         navigate('/admin');
       } else {
         localStorage.setItem("codefora_role", "user");
-        localStorage.removeItem("codefora_admin_token");
         navigate('/home');
       }
     } catch (err) {
@@ -60,7 +59,9 @@ export default function SignInPage() {
 
     localStorage.setItem("codefora_community", "sider");
     document.documentElement.dataset.community = "sider";
+    const guestId = `guest-${Date.now()}`;
     saveUsername("Guest");
+    localStorage.setItem("codefora_user_id", guestId);
     navigate('/home');
   }
 
@@ -77,10 +78,9 @@ export default function SignInPage() {
     const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(account.email);
     if (isAdmin) {
       localStorage.setItem("codefora_role", "admin");
-      localStorage.setItem("codefora_admin_token", "firebase_master_admin");
+
     } else {
       localStorage.setItem("codefora_role", "user");
-      localStorage.removeItem("codefora_admin_token");
     }
 
     setAuthForm({ username: "", email: "", password: "", confirmPassword: "" });

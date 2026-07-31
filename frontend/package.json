@@ -11,8 +11,11 @@
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@remix-run/router": "^1.23.2",
+    "@tailwindcss/postcss": "^4.3.2",
+    "clsx": "^2.1.1",
     "fdir": "^6.5.0",
     "firebase": "^10.12.2",
+    "framer-motion": "^12.42.2",
     "idb": "^7.1.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.395.0",
@@ -22,6 +25,8 @@
     "react-joyride": "^3.1.0",
     "react-router-dom": "^6.23.1",
     "socket.io-client": "^4.7.5",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.2",
     "y-monaco": "^0.1.6",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.31"
@@ -29,7 +34,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "esbuild": "^0.25.12",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.16",
     "react-refresh": "^0.17.0",
     "rollup": "^4.61.1",
     "tinyglobby": "^0.2.17",

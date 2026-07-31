@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Loader2, Save, Play, Code2, Layout, Terminal, Globe, ChevronRight, Plus, Upload, X, Download } from 'lucide-react';
+import { Loader2, Save, Play, Code2, Layout, Terminal, Globe, ChevronRight, Plus, Upload, X as XIcon, Download } from 'lucide-react';
 import JSZip from "jszip";
 import Editor from "@monaco-editor/react";
 import { Navbar } from "../components/Navbar";
@@ -65,6 +65,8 @@ export function PlaygroundPage() {
       }
     }
   }, [location.state]);
+
+
 
   const handleCreateFile = () => {
     const selectedType = FILE_TYPES.find((type) => type.language === newFileType) || FILE_TYPES[0];
@@ -142,10 +144,20 @@ export function PlaygroundPage() {
 
   const [previewTarget, setPreviewTarget] = useState(null);
   const activeFile = files.find(f => f.name === activeName) || files[0];
+
+  useEffect(() => {
+    if (activeFile) {
+      localStorage.setItem("current_code", activeFile.code || "");
+      localStorage.setItem("current_language", activeFile.language || "");
+      localStorage.setItem("current_problem_title", `Playground File: ${activeFile.name}`);
+    }
+  }, [activeFile]);
   const previewDoc = buildPreview(files, previewTarget);
 
   const handleCodeChange = (value) => {
     setFiles(prev => prev.map(f => f.name === activeName ? { ...f, code: value } : f));
+    localStorage.setItem("current_code", value || "");
+    localStorage.setItem("current_problem_title", `Playground File: ${activeName}`);
   };
 
   const handleRun = async () => {
@@ -351,14 +363,12 @@ export function PlaygroundPage() {
             <Code2 size={14} />
             <span>{f.name}</span>
             {files.length > 1 && (
-              <X 
-                size={12} 
-                className="hover-danger" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteFile(f.name);
-                }} 
-              />
+              <button type="button" onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteFile(f.name);
+              }} className="pg-file-delete" aria-label="Delete file">
+                <XIcon size={14} />
+              </button>
             )}
           </div>
         ))}
@@ -397,7 +407,7 @@ export function PlaygroundPage() {
                 </div>
                 {activeMainTab === 'preview' && !isSplitView && (
                   <button onClick={() => { setActiveMainTab('editor'); setIsSplitView(true); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }} title="Close Full Screen">
-                    <X size={14} />
+                    <XIcon size={14} />
                   </button>
                 )}
               </div>

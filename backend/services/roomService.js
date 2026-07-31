@@ -7,7 +7,7 @@ export class RoomService {
     this.repository = repository;
   }
 
-  createRoom({ name, username, visibility, userId, problemId, max }) {
+  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage }) {
     const trimmedName = name?.trim() || "Untitled Lab";
 
     if (this.repository.findByName(trimmedName)) {
@@ -41,6 +41,8 @@ export class RoomService {
       inviteCode,
       problemId: problemId || null,
       max: Math.min(Number(max) || 7, 7),
+      isChallenge: !!isChallenge,
+      targetImage: targetImage || null,
       createdAt: Date.now()
     };
   }

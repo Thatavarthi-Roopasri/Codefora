@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createAuth, createFirestore } from "../config/firebase.js";
 import { globalOnlineUsers } from "../utils/presenceTracker.js";
+import { getNextFriendCode } from "./profileController.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localProblemsPath = path.join(__dirname, "../data/problems.json");
@@ -44,7 +45,8 @@ export function createAdminController(roomRepository) {
           onlineUsers: globalOnlineUsers.size,
           activeRooms: rooms.length,
           totalProblems: problems.length,
-          mostSolved: "N/A"
+          mostSolved: "N/A",
+          isSuperAdmin: request.adminUser?.isSuperAdmin || false
         });
       } catch (err) {
         console.error("Admin stats failed:", err);
@@ -69,23 +71,29 @@ export function createAdminController(roomRepository) {
       try {
         if (!auth) return response.json([]);
 
-        const listUsersResult = await auth.listUsers(1000);
+        const users = [];
+        const maxUsersToFetch = 1000;
+        const listUsersResult = await auth.listUsers(maxUsersToFetch); 
         const authUsers = listUsersResult.users;
 
-        // Fetch profiles from Firestore to get more info (like rating, solved count, etc)
+        // Fetch profiles from Firestore 
         const profilesMap = {};
-        if (db && !db.isMock) {
-          const profilesSnap = await db.collection("profiles").get();
+        if (db) {
+          // Fetch up to 1000 recent profiles to match Auth limits without memory leaking
+          const profilesSnap = await db.collection("users").orderBy("updatedAt", "desc").limit(maxUsersToFetch).get();
           profilesSnap.forEach(doc => {
-            profilesMap[doc.id] = doc.data();
+            profilesMap[doc.id] = doc.data().profile || {};
           });
         }
 
-        const users = authUsers.map(user => {
-          const profile = profilesMap[user.uid] || {};
-          return {
+        const usersList = [];
+        for (const user of authUsers) {
+          let profile = profilesMap[user.uid] || {};
+          
+          usersList.push({
             userId: user.uid,
-            name: user.displayName || profile.name || user.email?.split('@')[0] || "Unknown User",
+            friendCode: profile.friendCode || "",
+            name: user.displayName || profile.displayName || user.email?.split('@')[0] || "Unknown User",
             email: user.email,
             emotionId: profile.emotionId || "",
             photoURL: user.photoURL || profile.photoURL || "",
@@ -93,15 +101,45 @@ export function createAdminController(roomRepository) {
             solved: profile.solvedCount || 0,
             status: globalOnlineUsers.has(user.uid) ? "Online" : "Offline",
             role: profile.role || "user",
-            createdAt: user.metadata.creationTime
-          };
+            createdAt: user.metadata.creationTime,
+            lastActive: user.metadata.lastSignInTime || user.metadata.creationTime
+          });
+        }
+        
+        usersList.sort((a, b) => {
+          if (a.status === "Online" && b.status !== "Online") return -1;
+          if (b.status === "Online" && a.status !== "Online") return 1;
+          return new Date(b.lastActive || 0) - new Date(a.lastActive || 0);
         });
-
-        users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-        return response.json(users);
+        return response.json(usersList);
       } catch (err) {
         console.error("Admin list users failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    updateUserRole: async (request, response) => {
+      try {
+        if (!request.adminUser?.isSuperAdmin) {
+          return response.status(403).json({ error: "Only Super Admins can manage roles." });
+        }
+        
+        const { id } = request.params;
+        const { role } = request.body;
+        
+        if (!db || db.isMock) return response.status(500).json({ error: "Database not available" });
+        
+        const userRef = db.collection("users").doc(id);
+        const userDoc = await userRef.get();
+        
+        let profile = userDoc.exists ? userDoc.data().profile || {} : {};
+        profile.role = role;
+        
+        await userRef.set({ profile }, { merge: true });
+        
+        return response.json({ success: true, role });
+      } catch (err) {
+        console.error("Admin updateUserRole failed:", err);
         return response.status(500).json({ error: err.message });
       }
     },

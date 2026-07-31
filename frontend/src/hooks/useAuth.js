@@ -43,9 +43,7 @@ export const useAuth = () => {
   useEffect(() => {
     if (isAdmin) {
       localStorage.setItem("codefora_role", "admin");
-      localStorage.setItem("codefora_admin_token", "firebase_master_admin");
-    } else if (user) {
-      localStorage.removeItem("codefora_admin_token");
+    } else {
       localStorage.setItem("codefora_role", "user");
     }
   }, [isAdmin, user]);

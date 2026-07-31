@@ -1,4 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createFirestore } from "../config/firebase.js";
+import { CODEFORA_KNOWLEDGE_BASE } from "../config/knowledgeBase.js";
+
+const db = createFirestore();
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 const DEFAULT_OLLAMA_MODEL = "llama3.2:1b";
@@ -13,6 +17,15 @@ export class AiService {
     const messages = buildMessages({ prompt, file, code, context });
 
     try {
+      const page = context?.page || "";
+      if (page !== "Problems" && page !== "Room") {
+        return await askCodeforaAI(prompt, context, code, file, context.language);
+      }
+
+      if (isCodeforaQuestion(prompt)) {
+        return await askCodeforaAI(prompt, context, code, file, context.language);
+      }
+
       if (provider === "groq") return await askGroq(messages);
       if (provider === "gemini") return await askGemini(messages);
       return await askOllama(messages);
@@ -32,6 +45,143 @@ function resolveProvider() {
   if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.GEMINI_API_KEY) return "gemini";
   return "ollama";
+}
+
+function isCodeforaQuestion(prompt) {
+  const text = prompt.toLowerCase();
+  
+  // If it's heavily coding-focused, bypass unless "codefora" is explicitly mentioned
+  if (/debug|error|compile|syntax|bug|c\+\+|java|python|javascript|algorithm|dsa|time complexity|space complexity/i.test(text)) {
+    if (!text.includes("codefora")) return false;
+  }
+  
+  const codeforaKeywords = [
+    "codefora", "rooms", "room", "platform", "navigate", "navigation", 
+    "collaborate", "collaboration", "profile", "profiles", "friend", 
+    "friends", "contest", "contests", "war room", "war rooms"
+  ];
+  
+  for (const kw of codeforaKeywords) {
+    const regex = new RegExp(`\\b${kw}\\b`, "i");
+    if (regex.test(text)) return true;
+  }
+  return false;
+}
+
+async function askCodeforaAI(userMessage, context = {}, code = "", file = "", language = "") {
+  const page = context.page;
+  const loraPrompt = page 
+    ? `[System Note: The user is currently on the '${page}' page.]\n${userMessage}`
+    : userMessage;
+
+  // 1. Fetch raw facts from LoRA
+  let rawLoraText = "";
+  try {
+    const response = await fetch(
+      "https://roopasri06-codefora-lora-api.hf.space/generate",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: loraPrompt })
+      }
+    );
+    if (!response.ok) throw new Error("LoRA API failed");
+    const data = await response.json();
+    rawLoraText = data.response || "No response";
+  } catch (error) {
+    console.error("LoRA Error:", error);
+    rawLoraText = "I couldn't reach the Codefora knowledge base right now.";
+  }
+
+  // 2. If Groq is missing, fallback to raw LoRA
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey) {
+    return { suggestion: rawLoraText, mode: "codefora-lora-raw" };
+  }
+
+  // 3. Chain to Groq for beautiful formatting and feedback analysis
+  const systemPrompt = `You are a cute, friendly, and helpful AI assistant for the Codefora platform.
+Codefora is a collaborative competitive programming platform where users can solve problems together in real-time rooms.
+The user is currently on the "${page || "Platform"}" page.
+${file ? `The user's active file/problem is: ${file}\n` : ""}
+${language ? `The user is programming in: ${language}\n` : ""}
+${code ? `The user's current code is:\n\`\`\`${language}\n${code}\n\`\`\`\n` : ""}
+The user asked: "${userMessage}"
+
+${CODEFORA_KNOWLEDGE_BASE}
+
+Our internal knowledge base (LoRA) provided this raw answer:
+"${rawLoraText}"
+
+Your Job:
+1. BEST FRIEND PERSONA: Speak to the user like they are your absolute best friend! Be extremely friendly, close, informal, and supportive ("Hey man!", "Bro!", "I got you!"). Do not sound like a robotic corporate assistant.
+2. CLARIFICATION RULE: If the user's request is vague or you are confused about what they want, proactively ask them to clarify! (e.g., "Can you please specify what exactly you're trying to ask, bro?").
+3. ACCURATE SITE KNOWLEDGE: NEVER hallucinate or invent generic website features (like "New user registration", "Code review", etc.). You MUST know exactly what is on the site based on the knowledge base. For example, if they ask how to change their profile picture, tell them: "Tap on your Profile icon in the top navbar to go to the Profile page, and you'll find the settings there!" Know exactly where things are positioned.
+4. IMPORTANT: Do NOT use markdown formatting like **bold** or ## headers, because our frontend does not have a markdown parser. Use clean spacing and line breaks instead.
+5. SOCRATIC TUTOR RULE: If the user provides code in the context and asks for help debugging, ONLY provide hints and point out the flawed area. DO NOT write the corrected code for them.
+6. DOM NAVIGATION RULE (MANDATORY): If the user asks to navigate somewhere, asks "where is X?", "show me X", or "how do I find X", you MUST return "action": "highlight" and the exact CSS selector from the Knowledge Base in "targetSelector". You MUST ALSO provide a short text reply saying "Here it is!" or similar. DO NOT just explain where it is with text if a selector exists.
+7. Analyze the user's intent: Are they frustrated, reporting a bug, or requesting a feature? If so, we will automatically submit this to our feedback system.
+
+Respond STRICTLY with a JSON object in this format:
+{
+  "reply": "Your beautifully formatted plain-text response here (with line breaks)",
+  "action": "highlight" or null,
+  "targetSelector": ".css-class-to-highlight" or null,
+  "isFeedback": true or false,
+  "feedbackType": "feature", "bug", or "frustration" (or null if not feedback),
+  "summary": "A 1-sentence summary of their feedback/issue (or null)"
+}`;
+
+  try {
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${groqKey}`
+      },
+      body: JSON.stringify({
+        model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+        messages: [{ role: "system", content: systemPrompt }],
+        temperature: 0.3,
+        response_format: { type: "json_object" }
+      })
+    });
+
+    if (!groqRes.ok) throw new Error("Groq analysis failed");
+    
+    const groqPayload = await groqRes.json();
+    const rawContent = groqPayload.choices?.[0]?.message?.content || "{}";
+    const parsed = JSON.parse(rawContent);
+
+    let finalReply = parsed.reply || rawLoraText;
+
+    // 4. Handle Automated Feedback
+    if (parsed.isFeedback && db) {
+      finalReply += "\n\n*(P.S. I noticed you might be having trouble or suggesting a feature. I have automatically sent this to the Codefora team as feedback!)*";
+      
+      await db.collection("feedback").add({
+        username: context.username || "AI Auto-Feedback",
+        message: `[Auto-Submitted via AI Chat]\nSummary: ${parsed.summary}\nOriginal: "${userMessage}"`,
+        type: parsed.feedbackType || "general",
+        rating: 0,
+        createdAt: Date.now()
+      }).catch(err => console.error("Auto-feedback save error:", err));
+    }
+
+    return { 
+      suggestion: finalReply,
+      action: parsed.action || null,
+      targetSelector: parsed.targetSelector || null,
+      mode: "codefora-lora-groq"
+    };
+  } catch (error) {
+    console.error("Groq Chain Error:", error);
+    // Fallback to raw LoRA if Groq fails
+    return {
+      suggestion: rawLoraText,
+      mode: "codefora-lora-raw-fallback"
+    };
+  }
 }
 
 function buildMessages({ prompt, file, code, context }) {

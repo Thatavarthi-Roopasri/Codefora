@@ -48,18 +48,22 @@ setPersistence({
         }
       }
 
-      ydoc.on('update', async () => {
-        const type = ydoc.getText("monaco");
-        const code = type.toString();
-        let room = await roomRepository.fetchById(roomId);
-        if (!room) room = await roomRepository.fetchByInviteCode(roomId);
-        if (room) {
-          const file = room.files.find(f => f.name.replace(/[^a-zA-Z0-9-.]/g, '') === fileNameStr);
-          if (file && file.code !== code) {
-            file.code = code;
-            roomRepository.save(room).catch(() => {});
+      let saveTimeout = null;
+      ydoc.on('update', () => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+          const type = ydoc.getText("monaco");
+          const code = type.toString();
+          let room = await roomRepository.fetchById(roomId);
+          if (!room) room = await roomRepository.fetchByInviteCode(roomId);
+          if (room) {
+            const file = room.files.find(f => f.name.replace(/[^a-zA-Z0-9-.]/g, '') === fileNameStr);
+            if (file && file.code !== code) {
+              file.code = code;
+              roomRepository.save(room).catch(() => {});
+            }
           }
-        }
+        }, 3000);
       });
     }
   },

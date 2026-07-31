@@ -26,56 +26,44 @@ export function Footer() {
       <div className="rooms-footer-content" style={{ position: 'relative', zIndex: 2 }}>
           <div className="rooms-footer-brand">
             <BrandButton logo />
-            <p>The real-time competitive coding platform for developers to learn, compete and grow together.</p>
+            <p>Enterprise payment and coding platform for developers across India.</p>
+            <p style={{ marginTop: '12px', fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>A product of BARG INFO SOLUTIONS</p>
           </div>
 
           <div className="rooms-footer-column">
-            <h4>Platform</h4>
+            <h4>Company</h4>
             <ul>
-              <li><NavLink to="/rooms">Rooms</NavLink></li>
-              <li><NavLink to="/problems">Problems</NavLink></li>
-              <li><NavLink to="/home">Battles</NavLink></li>
-              <li><NavLink to="/home">Contests</NavLink></li>
-              <li><NavLink to="/home">Leaderboard</NavLink></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Resources</h4>
-            <ul>
-              <li><NavLink to="/home">Blog</NavLink></li>
-              <li><NavLink to="/home">Docs</NavLink></li>
-              <li><NavLink to="/home">Guides</NavLink></li>
-              <li><NavLink to="/home">API</NavLink></li>
-              <li><NavLink to="/home">Changelog</NavLink></li>
-            </ul>
-          </div>
-
-          <div className="rooms-footer-column">
-            <h4>Community</h4>
-            <ul>
-              <li><NavLink to="/home">Discussions</NavLink></li>
-              <li><NavLink to="/home">Events</NavLink></li>
-              <li><NavLink to="/home">Top Users</NavLink></li>
-              <li><NavLink to="/home">Hall of Fame</NavLink></li>
-              <li><NavLink to="/feedback">Support</NavLink></li>
+              <li><NavLink to="/home">Home</NavLink></li>
+              <li><NavLink to="/about">About</NavLink></li>
+              <li><NavLink to="/services">Services</NavLink></li>
+              <li><NavLink to="/contact">Contact</NavLink></li>
             </ul>
           </div>
 
           <div className="rooms-footer-column">
             <h4>Legal</h4>
             <ul>
+              <li><NavLink to="/terms">Terms & Conditions</NavLink></li>
               <li><NavLink to="/privacy">Privacy Policy</NavLink></li>
-              <li><NavLink to="/terms">Terms of Service</NavLink></li>
-              <li><NavLink to="/conduct">Code of Conduct</NavLink></li>
+              <li><NavLink to="/refund-policy">Refund Policy</NavLink></li>
+              <li><NavLink to="/shipping">Shipping & Delivery</NavLink></li>
+            </ul>
+          </div>
+
+          <div className="rooms-footer-column">
+            <h4>Contact</h4>
+            <ul style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <li>Email: support@codefora.com</li>
+              <li>Phone: +91 90000 00000</li>
+              <li>Website: codefora.com</li>
             </ul>
           </div>
 
         </div>
 
-      <div className="rooms-footer-bottom" style={{ position: 'relative', zIndex: 2, borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '40px' }}>
-        <p>&copy; {new Date().getFullYear()} Codefora. All rights reserved.</p>
-        <p>Made with <span style={{ color: 'var(--brand-primary, var(--primary-color))' }}>❤️</span> for developers</p>
+      <div className="rooms-footer-bottom" style={{ position: 'relative', zIndex: 2, borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: '40px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <p>&copy; {new Date().getFullYear()} BARG INFO SOLUTIONS. All rights reserved.</p>
+        <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>Payments powered by licensed PCI-DSS partners.</p>
       </div>
     </footer>
   );

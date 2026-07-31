@@ -21,7 +21,8 @@ export function LeftNavBar({
   room,
   users,
   permissions,
-  actions
+  actions,
+  isAnyMicOn
 }) {
   const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(!activeTab);
@@ -70,7 +71,16 @@ export function LeftNavBar({
           <div className="icon-wrapper"><Target size={20} /></div>
           <span>Problem</span>
         </button>
-        <button className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} onClick={onShowUsers} title="Users">
+        <button 
+          className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} 
+          onClick={onShowUsers} 
+          title="Users"
+          style={isAnyMicOn ? {
+            boxShadow: "0 0 15px rgba(80, 250, 123, 0.4)",
+            border: "1px solid rgba(80, 250, 123, 0.4)",
+            color: "#50FA7B"
+          } : {}}
+        >
           <div className="icon-wrapper"><Users size={20} /></div>
           <span>Users</span>
         </button>

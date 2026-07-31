@@ -18,6 +18,8 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   // Real data states
   const [statsData, setStatsData] = useState(null);
@@ -25,6 +27,14 @@ export default function AdminDashboardPage() {
   const [problemList, setProblemList] = useState([]);
   const [users, setUsers] = useState([]);
   const [feedbackList, setFeedbackList] = useState([]);
+  
+  // Announcement states
+  const [announcementText, setAnnouncementText] = useState('');
+  const [announcementSearch, setAnnouncementSearch] = useState('');
+  const [selectedAnnouncementUsers, setSelectedAnnouncementUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [announcementUsersInitialized, setAnnouncementUsersInitialized] = useState(false);
   const [activityLog, setActivityLog] = useState([
     { icon: <Activity size={16} />, class: 'updated', text: 'System initialized and connected to server.', time: 'just now' }
   ]);
@@ -46,12 +56,21 @@ export default function AdminDashboardPage() {
         api.request("/api/admin/feedback")
       ]);
       setStatsData(s);
+      setIsSuperAdmin(s.isSuperAdmin || false);
       setRooms(r);
       setProblemList(p);
       setUsers(u);
+      if (!announcementUsersInitialized && u.length > 0) {
+        setSelectedAnnouncementUsers(u.map(user => user.userId));
+        setAnnouncementUsersInitialized(true);
+      }
       setFeedbackList(f || []);
+      setAuthError(false);
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
+      if (err.message.includes("403") || err.message.includes("401") || err.message.toLowerCase().includes("denied") || err.message.toLowerCase().includes("expired")) {
+        setAuthError(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -122,7 +141,33 @@ export default function AdminDashboardPage() {
     } catch (err) { alert(err.message); }
   };
 
-  if (authLoading || !isAdmin) return <div className="admin-dashboard-container"><Navbar /><div style={{ padding: '100px', textAlign: 'center', color: 'white' }}>Verifying Administrator...</div></div>;
+  const handleToggleRole = async (userId, currentRole) => {
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+    try {
+      await api.request(`/api/admin/users/${userId}/role`, { method: 'POST', body: JSON.stringify({ role: newRole }) });
+      setUsers(prev => prev.map(u => u.userId === userId ? { ...u, role: newRole } : u));
+      setActivityLog(prev => [{ icon: <ShieldAlert size={16} />, class: 'updated', text: `User <strong>${userId}</strong> is now ${newRole}.`, time: 'just now' }, ...prev]);
+    } catch (err) {
+      alert("Failed to change role: " + err.message);
+    }
+  };
+
+  if (authError) {
+    return (
+      <div className="admin-dashboard">
+        <Navbar />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '20px' }}>
+          <ShieldAlert size={64} style={{ color: '#ff5555', marginBottom: '20px' }} />
+          <h2 style={{ marginBottom: '10px' }}>Access Denied</h2>
+          <p style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', maxWidth: '400px' }}>
+            You do not have permission to view the Admin Dashboard.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !isAdmin) return <div className="admin-dashboard-container"><Navbar /><div style={{ padding: '100px', textAlign: 'center', color: 'white' }}>Verifying Administrator...</div></div>;
 
   const stats = statsData ? [
     { label: 'Total Users', value: statsData.totalUsers, trend: '+ 12.4% from yesterday', icon: <Users />, color: '#8BE9FD' },
@@ -191,7 +236,7 @@ export default function AdminDashboardPage() {
             <button className={`admin-nav-item ${activeTab === 'Settings' ? 'active' : ''}`} onClick={() => setActiveTab('Settings')}>
               <Settings size={18} /> Settings
             </button>
-            <button className="admin-nav-item">
+            <button className={`admin-nav-item ${activeTab === 'Announcements' ? 'active' : ''}`} onClick={() => setActiveTab('Announcements')}>
               <AlertTriangle size={18} /> Announcements
             </button>
           </div>
@@ -503,6 +548,127 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
+          {/* Announcements Tab */}
+          {activeTab === 'Announcements' && (
+            <div className="admin-panel" style={{ minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
+              <div className="admin-panel-header">
+                <h2>Send Announcement</h2>
+              </div>
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', flex: 1 }}>
+                <div className="admin-setting-group">
+                  <label className="admin-setting-label">Message (Plain Text)</label>
+                  <textarea 
+                    className="admin-input" 
+                    style={{ minHeight: '120px' }} 
+                    placeholder="Type your announcement here..."
+                    value={announcementText}
+                    onChange={e => setAnnouncementText(e.target.value)}
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="admin-setting-label" style={{ margin: 0 }}>Select Recipients</label>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <input 
+                      type="text" 
+                      className="admin-input" 
+                      placeholder="Search by ID or Name..." 
+                      value={announcementSearch}
+                      onChange={e => setAnnouncementSearch(e.target.value)}
+                      style={{ padding: '6px 12px', minWidth: '250px' }}
+                    />
+                    <button 
+                      className="btn-secondary" 
+                      onClick={() => {
+                        if (selectedAnnouncementUsers.length === users.length) setSelectedAnnouncementUsers([]);
+                        else setSelectedAnnouncementUsers(users.map(u => u.userId));
+                      }}
+                      style={{ padding: '6px 12px' }}
+                    >
+                      {selectedAnnouncementUsers.length === users.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="admin-table-container" style={{ flex: 1, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '50px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={selectedAnnouncementUsers.length === users.length && users.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedAnnouncementUsers(users.map(u => u.userId));
+                              else setSelectedAnnouncementUsers([]);
+                            }}
+                          />
+                        </th>
+                        <th>User</th>
+                        <th>USER ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.filter(u => !announcementSearch || (u.friendCode && u.friendCode.includes(announcementSearch)) || (u.name && u.name.toLowerCase().includes(announcementSearch.toLowerCase()))).map(u => (
+                        <tr key={u.userId} onClick={() => {
+                          setSelectedAnnouncementUsers(prev => 
+                            prev.includes(u.userId) ? prev.filter(id => id !== u.userId) : [...prev, u.userId]
+                          );
+                        }} style={{ cursor: 'pointer' }}>
+                          <td>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedAnnouncementUsers.includes(u.userId)}
+                              onChange={() => {}} // handled by tr click
+                            />
+                          </td>
+                          <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {u.photoURL ? (
+                              <img src={u.photoURL} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover' }} />
+                            ) : u.emotionId ? (
+                              <img src={`${API_URL}/api/emotions/${u.emotionId}/image`} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover', background: 'rgba(255,255,255,0.1)', padding: '2px' }} />
+                            ) : (
+                              <span className="user-avatar-sm">{u.name ? u.name[0].toUpperCase() : '?'}</span>
+                            )}
+                            {u.name}
+                          </td>
+                          <td style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>{u.friendCode || u.userId}</td>
+                        </tr>
+                      ))}
+                      {users.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center', padding: '20px' }}>No users found</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                  <button 
+                    className="btn-primary" 
+                    onClick={async () => {
+                      if (!announcementText.trim()) return alert("Enter a message");
+                      if (selectedAnnouncementUsers.length === 0) return alert("Select at least one user");
+                      try {
+                        setSendingAnnouncement(true);
+                        await api.request("/api/admin/announcements", {
+                          method: 'POST',
+                          body: JSON.stringify({ message: announcementText, userIds: selectedAnnouncementUsers })
+                        });
+                        alert(`Successfully sent to ${selectedAnnouncementUsers.length} users!`);
+                        setAnnouncementText('');
+                      } catch (err) {
+                        alert(err.message);
+                      } finally {
+                        setSendingAnnouncement(false);
+                      }
+                    }}
+                    disabled={sendingAnnouncement}
+                  >
+                    {sendingAnnouncement ? 'Sending...' : 'Send Announcement'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Bottom Row Panels (Users, Reports, Settings) */}
           {(activeTab === 'Dashboard' || activeTab === 'Users' || activeTab === 'Reports' || activeTab === 'Settings') && (
             <div className={activeTab === 'Dashboard' ? "admin-panels-grid" : ""} style={{ display: activeTab === 'Dashboard' ? 'grid' : 'block', gridTemplateColumns: '1fr 1fr 1fr' }}>
@@ -511,6 +677,16 @@ export default function AdminDashboardPage() {
                 <div className="admin-panel" style={activeTab === 'Users' ? { flex: 1, minHeight: '600px' } : {}}>
                   <div className="admin-panel-header">
                     <h2>{activeTab === 'Users' ? 'User Management' : 'Recent Users'}</h2>
+                    {activeTab === 'Users' && (
+                      <input 
+                        type="text" 
+                        placeholder="Search by ID, USER ID, or Name..." 
+                        className="admin-input" 
+                        style={{ padding: '6px 12px', minWidth: '300px', marginLeft: 'auto', marginRight: '15px' }}
+                        value={userSearch}
+                        onChange={e => setUserSearch(e.target.value)}
+                      />
+                    )}
                     {activeTab === 'Dashboard' && <button className="admin-link-button" onClick={() => setActiveTab('Users')}>View All</button>}
                   </div>
                   <div className="admin-table-container">
@@ -518,6 +694,7 @@ export default function AdminDashboardPage() {
                       <thead>
                         <tr>
                           <th>User</th>
+                          <th>USER ID</th>
                           <th>Rating</th>
                           <th>Solved</th>
                           <th>Status</th>
@@ -525,30 +702,75 @@ export default function AdminDashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {users.slice(0, activeTab === 'Dashboard' ? 5 : users.length).map(u => (
-                          <tr key={u.userId}>
-                            <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {u.photoURL ? (
-                                <img src={u.photoURL} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover' }} />
-                              ) : u.emotionId ? (
-                                <img src={`${API_URL}/api/emotions/${u.emotionId}/image`} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover', background: 'rgba(255,255,255,0.1)', padding: '2px' }} />
-                              ) : (
-                                <span className="user-avatar-sm">{u.name ? u.name[0].toUpperCase() : '?'}</span>
+                        {(() => {
+                          const filtered = users.filter(u => !userSearch || 
+                            (u.friendCode && u.friendCode.includes(userSearch)) || 
+                            (u.name && u.name.toLowerCase().includes(userSearch.toLowerCase())) ||
+                            (u.userId && u.userId.includes(userSearch))
+                          );
+                          
+                          const admins = filtered.filter(u => u.role === 'admin' || u.email === 'ganeshvanamala16@gmail.com');
+                          const regulars = filtered.filter(u => u.role !== 'admin' && u.email !== 'ganeshvanamala16@gmail.com');
+                          
+                          const displayAdmins = activeTab === 'Dashboard' ? admins.slice(0, 5) : admins;
+                          const displayRegulars = activeTab === 'Dashboard' ? regulars.slice(0, 5) : regulars;
+                          
+                          const renderUserRow = (u) => (
+                            <tr key={u.userId}>
+                              <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                {u.photoURL ? (
+                                  <img src={u.photoURL} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover' }} />
+                                ) : u.emotionId ? (
+                                  <img src={`${API_URL}/api/emotions/${u.emotionId}/image`} alt={u.name} className="user-avatar-sm" style={{ objectFit: 'cover', background: 'rgba(255,255,255,0.1)', padding: '2px' }} />
+                                ) : (
+                                  <span className="user-avatar-sm">{u.name ? u.name[0].toUpperCase() : '?'}</span>
+                                )}
+                                {u.name}
+                              </td>
+                              <td style={{ fontFamily: 'monospace', color: 'var(--primary-accent)' }}>
+                                {u.friendCode || 'N/A'}
+                              </td>
+                              <td>{u.rating}</td>
+                              <td>{u.solved}</td>
+                              <td><span className={`status-badge ${u.status.toLowerCase()}`}>{u.status}</span></td>
+                              <td>
+                                <div className="admin-table-actions">
+                                  <button className="admin-action-btn" title="View Profile" onClick={() => window.open(`/profile/${u.friendCode || u.userId}`, '_blank')}><Eye size={12} /></button>
+                                  {isSuperAdmin && u.email !== 'ganeshvanamala16@gmail.com' && (
+                                    <button 
+                                      className={`admin-action-btn ${u.role === 'admin' ? 'danger' : 'warning'}`} 
+                                      title={u.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                                      onClick={() => handleToggleRole(u.userId, u.role)}
+                                    >
+                                      <ShieldAlert size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+
+                          return (
+                            <>
+                              {displayAdmins.length > 0 && (
+                                <>
+                                  <tr className="admin-table-section-header">
+                                    <td colSpan="6" style={{ background: 'rgba(255, 255, 255, 0.05)', fontWeight: 'bold', color: 'var(--primary-accent)', padding: '8px 12px' }}>Administrators</td>
+                                  </tr>
+                                  {displayAdmins.map(renderUserRow)}
+                                </>
                               )}
-                              {u.name}
-                            </td>
-                            <td>{u.rating}</td>
-                            <td>{u.solved}</td>
-                            <td><span className={`status-badge ${u.status.toLowerCase()}`}>{u.status}</span></td>
-                            <td>
-                              <div className="admin-table-actions">
-                                <button className="admin-action-btn" title="View"><Eye size={12} /></button>
-                                <button className="admin-action-btn warning" title="Warn"><AlertTriangle size={12} /></button>
-                                <button className="admin-action-btn danger" title="Ban"><ShieldAlert size={12} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                              {displayRegulars.length > 0 && (
+                                <>
+                                  <tr className="admin-table-section-header">
+                                    <td colSpan="6" style={{ background: 'rgba(255, 255, 255, 0.02)', fontWeight: 'bold', color: 'rgba(255,255,255,0.6)', padding: '8px 12px' }}>Regular Users</td>
+                                  </tr>
+                                  {displayRegulars.map(renderUserRow)}
+                                </>
+                              )}
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -579,11 +801,15 @@ export default function AdminDashboardPage() {
                             <td style={{ color: '#FF5555' }}>{r.type}</td>
                             <td>
                               <div>{r.reportedName}</div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{r.reportedId}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                {users.find(u => u.userId === r.reportedId)?.friendCode || r.reportedId}
+                              </div>
                             </td>
                             <td>
                               <div>{r.reporterName}</div>
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{r.reporterId}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                {users.find(u => u.userId === r.reporterId)?.friendCode || r.reporterId}
+                              </div>
                             </td>
                             <td title={r.reason}>{r.reason.length > 30 ? r.reason.substring(0, 30) + "..." : r.reason}</td>
                             <td>{r.time}</td>

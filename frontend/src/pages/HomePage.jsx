@@ -7,6 +7,7 @@ import { trackEvent } from "../lib/analytics";
 import { logoutUser, signInWithGoogle } from "../lib/firebase";
 import { saveUsername } from "../lib/navigation";
 import { api } from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import mountainImage from "../assets/home/neon-mountain.svg";
 import campfireImage from "../assets/home/neon-campfire.svg";
 import celebrationImage from "../assets/home/neon-celebration.svg";
@@ -20,18 +21,12 @@ import { Navbar } from "../components/Navbar";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [authTab, setAuthTab] = useState("login");
   const [authForm, setAuthForm] = useState({ username: "", password: "", confirmPassword: "" });
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
-  const [signedInName, setSignedInName] = useState(() => {
-    try {
-      return localStorage.getItem("codefora_username") || "";
-    } catch {
-      return "";
-    }
-  });
 
   async function handleGoogleSignIn() {
     try {
@@ -40,7 +35,6 @@ export default function HomePage() {
       const displayName = account?.displayName || account?.email?.split("@")[0] || "Developer";
       saveUsername(displayName);
       if (account?.uid) localStorage.setItem("codefora_user_id", account.uid);
-      setSignedInName(displayName);
       setAuthOpen(false);
       navigate('/');
     } catch (err) {
@@ -74,7 +68,6 @@ export default function HomePage() {
   function finishManualAuth(account) {
     saveUsername(account.displayName || account.username);
     localStorage.setItem("codefora_user_id", account.userId);
-    setSignedInName(account.displayName || account.username);
     setAuthForm({ username: "", password: "", confirmPassword: "" });
     setAuthStatus("");
     setAuthOpen(false);
@@ -106,12 +99,12 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (!signedInName) {
+    if (!loading && !user) {
       navigate("/");
     }
-  }, [signedInName, navigate]);
+  }, [user, loading, navigate]);
 
-  if (!signedInName) return null;
+  if (loading || !user) return null;
 
   return (
     <main style={{ 

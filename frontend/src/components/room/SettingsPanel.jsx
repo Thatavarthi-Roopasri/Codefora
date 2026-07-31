@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Unlock, Copy } from 'lucide-react';
+import { copyToClipboard } from "../../lib/clipboard";
 
 export function SettingsPanel({ room, users, timer, permissions, actions }) {
   const [localMaxMembers, setLocalMaxMembers] = useState(room?.max || 7);
@@ -132,7 +133,14 @@ export function SettingsPanel({ room, users, timer, permissions, actions }) {
                 {room.inviteCode}
               </span>
               <button
-                onClick={() => navigator.clipboard.writeText(room.inviteCode)}
+                onClick={async () => {
+                  try {
+                    await copyToClipboard(room.inviteCode);
+                    alert("Invite code copied!");
+                  } catch (e) {
+                    alert("Failed to copy invite code.");
+                  }
+                }}
                 style={{ background: "transparent", border: "none", color: "#fff", cursor: "pointer", padding: "4px" }}
                 title="Copy Invite Code"
               >
