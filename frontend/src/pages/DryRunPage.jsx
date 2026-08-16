@@ -43,7 +43,7 @@ export function DryRunPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#000000] text-gray-100 font-sans">
+    <div className="dry-run-page min-h-screen bg-[#000000] text-gray-100 font-sans">
       <AnimatePresence mode="wait">
         <motion.div
           key={problemNum}
@@ -52,7 +52,7 @@ export function DryRunPage() {
           exit={{ opacity: 0, x: -30 }}
           transition={{ duration: 0.25 }}
         >
-          <div className="bg-[#000000] pt-4 px-4 max-w-7xl mx-auto flex items-center justify-between">
+          <div className="dry-run-back-row bg-[#000000] pt-4 px-4 max-w-7xl mx-auto flex items-center justify-between">
             <button
               onClick={goBackToProblem}
               className="font-marker text-sm text-gray-400 hover:text-gray-100 border-2 border-gray-700 rounded px-3 py-1 hover:border-indigo-500 transition-colors mb-2"

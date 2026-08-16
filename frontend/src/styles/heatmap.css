@@ -12,6 +12,11 @@
   font-family: 'Inter', system-ui, sans-serif;
   color: #fff;
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .heatmap-range-row {
@@ -256,6 +261,7 @@
   display: flex;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   align-items: flex-start;
 }
 
@@ -290,6 +296,9 @@
   overflow-x: auto;
   padding-bottom: 2px;
   width: 100%;
+  min-width: 0;
+  flex: 1 1 0;
+  overscroll-behavior-x: contain;
 }
 
 .heatmap-scroll-container::-webkit-scrollbar {
@@ -503,4 +512,56 @@
   border-width: 5px;
   border-style: solid;
   border-color: #30363d transparent transparent transparent;
+}
+
+@media (max-width: 600px) {
+  .activity-heatmap-wrapper {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .heatmap-range-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .heatmap-range-row select,
+  .heatmap-theme-select {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding-inline: 10px 30px;
+    font-size: 12px;
+  }
+
+  .heatmap-main-layout {
+    gap: 6px;
+  }
+
+  .heatmap-scroll-container {
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+  }
+
+  .heatmap-months-row {
+    margin-left: 0;
+  }
+
+  .heatmap-weekdays {
+    min-width: 28px;
+    font-size: 11px;
+  }
+
+  .heatmap-month-label,
+  .heatmap-help-text,
+  .heatmap-legend {
+    font-size: 12px;
+  }
+
+  .heatmap-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
 }

@@ -354,6 +354,32 @@ export function ProblemsPage() {
 
           {/* MAIN */}
           <section className="problems-v2-main">
+            <div className="problems-v2-mobile-filters">
+              <div className="problems-v2-search">
+                <Search size={16} />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search problems..." />
+              </div>
+              <div className="problems-v2-mobile-selects">
+                <select
+                  className="problems-v2-sort"
+                  value={selectedTags[0] || ""}
+                  onChange={(e) => setSelectedTags(e.target.value ? [e.target.value] : [])}
+                  aria-label="Filter by topic"
+                >
+                  <option value="">All topics</option>
+                  {allTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+                <select
+                  className="problems-v2-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  aria-label="Sort problems"
+                >
+                  {sortOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              </div>
+            </div>
+
             <div className="problems-v2-header">
               <h1>Problems</h1>
               <p>Sharpen your skills by solving curated problems across topics.</p>

@@ -348,7 +348,7 @@ export function Navbar() {
   });
 
   return (
-    <header style={{ 
+    <header className="app-navbar" style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
       padding: '20px 40px', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)',
       borderBottom: '1px solid rgba(255,255,255,0.05)',
@@ -356,7 +356,7 @@ export function Navbar() {
       zIndex: 100
     }}>
       <BrandButton logo />
-      <nav className="tour-navbar" style={{ gap: '40px', display: 'flex', alignItems: 'center' }}>
+      <nav className="tour-navbar app-navbar-links" style={{ gap: '40px', display: 'flex', alignItems: 'center' }}>
         <NavLink to="/home" end style={linkStyle}>Home</NavLink>
         <NavLink to="/rooms" style={linkStyle}>Rooms</NavLink>
         <NavLink to="/problems" style={linkStyle}>Problems</NavLink>
@@ -365,7 +365,7 @@ export function Navbar() {
         <NavLink to="/feedback" style={linkStyle}>Feedback</NavLink>
         {isAdmin && <NavLink to="/admin" style={linkStyle}>Dashboard</NavLink>}
       </nav>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div className="app-navbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
         {user && (
           <>
             {/* Friends Dropdown */}
@@ -385,7 +385,7 @@ export function Navbar() {
               </button>
 
               {showFriends && (
-                <div style={{
+                <div className="navbar-friends-menu" style={{
                   position: 'absolute', top: 'calc(100% + 10px)', right: 0,
                   background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '8px', padding: '12px', width: '320px',
@@ -400,7 +400,7 @@ export function Navbar() {
                     </button>
                   </div>
                   {friendCode && (
-                    <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '6px', padding: '8px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="navbar-friend-code" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '6px', padding: '8px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>Your USER ID:</span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontFamily: 'monospace', color: 'var(--primary-accent)', fontWeight: 'bold' }}>{friendCode}</span>
@@ -439,7 +439,7 @@ export function Navbar() {
                     </div>
                   )}
                   {/* Search Friend Input */}
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <div className="navbar-friend-search" style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
                     <input 
                       type="text" 
                       placeholder="Enter 8-digit USER ID..." 

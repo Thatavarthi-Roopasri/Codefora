@@ -63,10 +63,10 @@ export function ChallengesPage() {
   return (
     <main className="problems-shell" style={{ width: "100%" }}>
       <Navbar />
-      <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 20px" }}>
+      <div className="challenge-page-content" style={{ maxWidth: "1200px", margin: "0 auto", padding: "40px 20px" }}>
         
-        <header style={{ textAlign: "center", marginBottom: "60px" }}>
-          <h1 style={{ fontSize: "3rem", fontWeight: "bold", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "center", gap: "16px" }}>
+        <header className="challenge-page-header" style={{ textAlign: "center", marginBottom: "60px" }}>
+          <h1 className="challenge-page-title" style={{ fontSize: "3rem", fontWeight: "bold", marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "center", gap: "16px" }}>
             <Trophy size={40} color="#ff3e00" /> UI Battle Challenges
           </h1>
           <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "1.2rem", maxWidth: "600px", margin: "0 auto" }}>
@@ -80,10 +80,10 @@ export function ChallengesPage() {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px" }}>
+        <div className="challenge-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px" }}>
           
           {/* Frontend Challenge Card */}
-          <div style={{
+          <div className="challenge-card" style={{
             background: "rgba(255,255,255,0.03)",
             border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: "16px",
@@ -107,7 +107,7 @@ export function ChallengesPage() {
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: "12px", background: "rgba(0,0,0,0.2)", padding: "8px", borderRadius: "12px" }}>
+            <div className="challenge-difficulty-picker" style={{ display: "flex", gap: "12px", background: "rgba(0,0,0,0.2)", padding: "8px", borderRadius: "12px" }}>
               {["easy", "medium", "hard"].map((level) => (
                 <button
                   key={level}
@@ -142,7 +142,7 @@ export function ChallengesPage() {
           </div>
 
           {/* More challenges coming soon placeholder */}
-          <div style={{
+          <div className="challenge-placeholder" style={{
             background: "rgba(255,255,255,0.01)",
             border: "1px dashed rgba(255,255,255,0.1)",
             borderRadius: "16px",

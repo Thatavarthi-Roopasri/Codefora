@@ -343,7 +343,7 @@ export function ProfilePage() {
             <div className="profile-name-row">
               <h1>{headerName}</h1>
               {isOwnProfile ? (
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="profile-name-actions" style={{ display: 'flex', gap: '10px' }}>
                   <button className="btn-secondary" onClick={openEditModal} style={{ padding: '6px 12px', fontSize: '12px' }}>
                     <Edit3 size={14} /> Edit Profile
                   </button>
@@ -352,7 +352,7 @@ export function ProfilePage() {
                   </button>
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="profile-name-actions" style={{ display: 'flex', gap: '10px' }}>
                   {user && (
                     <button className="btn-secondary" onClick={() => setIsReportModalOpen(true)} style={{ padding: '6px 12px', fontSize: '12px', color: '#ff5555', borderColor: 'rgba(255, 85, 85, 0.3)' }}>
                       <ShieldAlert size={14} /> Report User

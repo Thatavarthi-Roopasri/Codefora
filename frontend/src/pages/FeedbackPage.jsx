@@ -249,6 +249,26 @@ export default function FeedbackPage() {
           .feedback-grid { grid-template-columns: 1fr; }
           .feedback-header h1 { font-size: 2.2rem; }
         }
+
+        @media (max-width: 600px) {
+          .feedback-container { padding: 40px 14px; }
+          .feedback-header { margin-bottom: 32px; }
+          .feedback-header h1 { font-size: 2rem; line-height: 1.15; }
+          .feedback-header p { font-size: 1rem; line-height: 1.5; }
+          .feedback-grid { gap: 20px; }
+          .feedback-card { border-radius: 12px; padding: 20px 16px; }
+          .rating-section { margin-bottom: 28px; }
+          .star-rating-large { width: 100%; justify-content: space-between; gap: 4px; }
+          .star-btn-lg { padding: 2px; }
+          .star-btn-lg svg { width: 32px; height: 32px; }
+          .input-field textarea { min-height: 150px; padding: 14px; border-radius: 10px; }
+          .field-footer { gap: 12px; flex-wrap: wrap; }
+          .submit-btn-full { border-radius: 10px; padding: 14px; }
+          .info-sidebar { gap: 12px; }
+          .info-item { gap: 12px; padding: 16px; border-radius: 12px; }
+          .info-icon { width: 38px; height: 38px; border-radius: 9px; }
+          .success-full { padding: 36px 0; }
+        }
       `}</style>
     </div>
   );

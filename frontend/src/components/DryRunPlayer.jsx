@@ -62,12 +62,12 @@ const DryRunPlayer = ({ problem }) => {
   const prev = () => setStepIndex(p => Math.max(p - 1, 0));
 
   return (
-    <div className="w-full min-h-screen bg-[#000000] p-4 font-handwritten">
-      <div className="bg-[#111111] border-2 border-gray-800 rounded-xl shadow-2xl max-w-7xl mx-auto">
+    <div className="dry-run-player w-full min-h-screen bg-[#000000] p-4 font-handwritten">
+      <div className="dry-run-player-card bg-[#111111] border-2 border-gray-800 rounded-xl shadow-2xl max-w-7xl mx-auto">
 
         {/* Problem Info Bar */}
-        <div className="flex flex-wrap items-center gap-4 px-6 py-3 bg-[#0a0a0a] border-b-2 border-dashed border-gray-800 rounded-t-xl">
-          <h2 className="text-xl font-marker font-bold text-gray-100">{problem.title}</h2>
+        <div className="dry-run-info-bar flex flex-wrap items-center gap-4 px-6 py-3 bg-[#0a0a0a] border-b-2 border-dashed border-gray-800 rounded-t-xl">
+          <h2 className="dry-run-title text-xl font-marker font-bold text-gray-100">{problem.title}</h2>
           {problem.difficulty && (
             <span className={`px-2 py-0.5 border-2 rounded text-xs font-marker font-bold ${DIFFICULTY_COLOR[problem.difficulty] || 'text-gray-400 border-gray-700'}`}>
               {problem.difficulty}
@@ -78,7 +78,7 @@ const DryRunPlayer = ({ problem }) => {
               #{t}
             </span>
           ))}
-          <div className="ml-auto text-sm font-handwritten text-gray-400">
+          <div className="dry-run-input-output ml-auto text-sm font-handwritten text-gray-400">
             <span className="font-bold text-gray-200">Input:</span> {problem.input || 'N/A'}
             &nbsp;&nbsp;
             <span className="font-bold text-gray-200">Expected:</span> {problem.output || 'N/A'}
@@ -86,10 +86,10 @@ const DryRunPlayer = ({ problem }) => {
         </div>
 
         {/* Main Content */}
-        <div className="flex flex-col min-h-[600px]">
+        <div className="dry-run-main flex flex-col min-h-[600px]">
 
           {/* Toggle pseudo code button bar */}
-          <div className="flex items-center gap-3 px-5 py-2 bg-[#0d0d0d] border-b-2 border-dashed border-gray-800">
+          <div className="dry-run-toggle-bar flex items-center gap-3 px-5 py-2 bg-[#0d0d0d] border-b-2 border-dashed border-gray-800">
             <button
               onClick={() => setShowPseudo(prev => !prev)}
               className={`flex items-center gap-2 px-4 py-1.5 border-2 rounded-lg font-marker text-sm font-bold transition-all duration-300 ${
@@ -104,7 +104,7 @@ const DryRunPlayer = ({ problem }) => {
           </div>
 
           {/* Professor's Step Explanation */}
-          <div className="px-6 py-6 border-b-2 border-dashed border-gray-800 bg-[#161616] min-h-[110px] flex items-center">
+          <div className="dry-run-explanation px-6 py-6 border-b-2 border-dashed border-gray-800 bg-[#161616] min-h-[110px] flex items-center">
             <AnimatePresence mode="wait">
               <motion.div
                 key={stepIndex}
@@ -112,7 +112,7 @@ const DryRunPlayer = ({ problem }) => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.3 }}
-                className="text-2xl font-handwritten text-yellow-300 font-bold leading-snug"
+                className="dry-run-explanation-text text-2xl font-handwritten text-yellow-300 font-bold leading-snug"
               >
                 ✍️ {currentStep.explanation}
               </motion.div>
@@ -120,9 +120,9 @@ const DryRunPlayer = ({ problem }) => {
           </div>
 
           {/* Visualizer + optional Pseudo Code side by side */}
-          <div className="flex flex-row flex-1 overflow-hidden">
+          <div className="dry-run-visual-layout flex flex-row flex-1 overflow-hidden">
             {/* Visualizer area */}
-            <div className="flex-1 p-6 overflow-auto relative min-w-0 bg-[#0a0a0a] transition-all duration-300">
+            <div className="dry-run-visualizer flex-1 p-6 overflow-auto relative min-w-0 bg-[#0a0a0a] transition-all duration-300">
               <VisualRenderer visual={currentStep.visual} />
             </div>
 
@@ -134,7 +134,7 @@ const DryRunPlayer = ({ problem }) => {
                   animate={{ width: '35%', opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
                   transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  className="border-l-2 border-gray-800 overflow-hidden bg-[#0a0a0a]"
+                  className="dry-run-pseudo-panel border-l-2 border-gray-800 overflow-hidden bg-[#0a0a0a]"
                 >
                   <PseudoCodePanel pseudoCode={pseudoCode} activeLine={activePseudoLine} />
                 </motion.div>
@@ -144,7 +144,7 @@ const DryRunPlayer = ({ problem }) => {
 
           {/* Variables display */}
           {currentStep.variables && Object.keys(currentStep.variables).length > 0 && (
-            <div className="border-t-2 border-dashed border-gray-800 px-5 py-3 bg-[#111111]">
+            <div className="dry-run-variables border-t-2 border-dashed border-gray-800 px-5 py-3 bg-[#111111]">
               <div className="text-xs font-marker text-gray-500 mb-1.5">📋 Current Variables:</div>
               <div className="flex flex-wrap gap-x-6 gap-y-1">
                 {Object.entries(currentStep.variables).map(([k, v]) => (
@@ -165,7 +165,7 @@ const DryRunPlayer = ({ problem }) => {
         </div>
 
         {/* Bottom Controls */}
-        <div className="border-t-2 border-gray-800 px-6 py-4 bg-[#0a0a0a] rounded-b-xl flex flex-col gap-3">
+        <div className="dry-run-controls border-t-2 border-gray-800 px-6 py-4 bg-[#0a0a0a] rounded-b-xl flex flex-col gap-3">
 
           {/* Timeline */}
           <div className="flex items-center gap-3">
@@ -188,8 +188,8 @@ const DryRunPlayer = ({ problem }) => {
           </div>
 
           {/* Playback buttons + speed */}
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2">
+          <div className="dry-run-control-row flex items-center justify-between flex-wrap gap-3">
+            <div className="dry-run-playback-buttons flex items-center gap-2">
               <button onClick={prev} className="p-2 border-2 border-gray-700 rounded hover:bg-gray-800 text-gray-300">
                 <SkipBack size={18} />
               </button>
@@ -206,7 +206,7 @@ const DryRunPlayer = ({ problem }) => {
             </div>
 
             {/* Speed */}
-            <div className="flex items-center gap-1 border-2 border-gray-700 rounded overflow-hidden bg-[#111111]">
+            <div className="dry-run-speed-controls flex items-center gap-1 border-2 border-gray-700 rounded overflow-hidden bg-[#111111]">
               {SPEEDS.map(s => (
                 <button
                   key={s}

@@ -2258,7 +2258,7 @@
   /* ========================================================= */
   /* MOBILE RESPONSIVE OVERRIDES                               */
   /* ========================================================= */
-  @media (max-width: 768px) {
+  @media (max-width: 900px) {
     .mobile-hidden {
       display: none !important;
     }
@@ -2266,6 +2266,10 @@
     /* 1. Global Layout Reordering */
     .room-layout-wrapper {
       flex-direction: column !important;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      overflow: hidden !important;
+      position: relative;
     }
 
     /* 2. Left NavBar to Bottom NavBar */
@@ -2332,15 +2336,40 @@
 
     /* 3. Full Screen Sidebars (Workspace) */
     .workspace-sidebar {
-      position: absolute !important;
-      top: 52px !important; /* Below TopBar */
+      position: fixed !important;
+      top: 60px !important; /* Below TopBar */
       bottom: 60px !important; /* Above BottomNav */
       left: 0 !important;
       right: 0 !important;
-      width: 100% !important;
-      z-index: 500 !important;
-      background: var(--bg-primary) !important;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      min-width: 0 !important;
+      box-sizing: border-box;
+      z-index: 1500 !important;
+      background: #0b1120 !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
       border-right: none !important;
+      overflow: hidden !important;
+    }
+
+    .workspace-sidebar > div,
+    .workspace-sidebar .users-panel {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+
+    .workspace-sidebar .users-panel {
+      border-right: none !important;
+      background: #0b1120 !important;
+    }
+
+    .workspace-sidebar .users-list {
+      overscroll-behavior: contain;
+    }
+
+    .users-resize-handle {
+      display: none !important;
     }
 
     /* 4. Disable Split View (Force Column) */

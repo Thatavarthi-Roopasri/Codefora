@@ -25,3 +25,121 @@ input[type='range']::-moz-range-thumb {
 ::-webkit-scrollbar-track { background: #0a0a0a; }
 ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* Shared responsive layout for every visual dry run. */
+@media (max-width: 768px) {
+  .dry-run-page,
+  .dry-run-player {
+    overflow-x: hidden;
+  }
+
+  .dry-run-back-row {
+    padding-inline: 12px;
+  }
+
+  .dry-run-player {
+    padding: 12px;
+  }
+
+  .dry-run-player-card {
+    border-radius: 12px;
+  }
+
+  .dry-run-info-bar {
+    align-items: flex-start;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .dry-run-title {
+    width: 100%;
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
+  .dry-run-input-output {
+    width: 100%;
+    margin-left: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .dry-run-main {
+    min-height: 460px;
+  }
+
+  .dry-run-toggle-bar,
+  .dry-run-variables,
+  .dry-run-controls {
+    padding-inline: 16px;
+  }
+
+  .dry-run-explanation {
+    min-height: 96px;
+    padding: 18px 16px;
+  }
+
+  .dry-run-explanation-text {
+    font-size: 1.1rem;
+    line-height: 1.45;
+  }
+
+  .dry-run-visual-layout {
+    flex-direction: column !important;
+    overflow: auto;
+  }
+
+  .dry-run-visualizer {
+    min-height: 300px;
+    padding: 16px;
+  }
+
+  .dry-run-pseudo-panel {
+    width: 100% !important;
+    max-height: 280px;
+    border-top: 2px solid #1f2937;
+    border-left: 0;
+  }
+
+  .dry-run-control-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dry-run-playback-buttons,
+  .dry-run-speed-controls {
+    justify-content: center;
+  }
+
+  .dry-run-speed-controls {
+    width: 100%;
+  }
+
+  .dry-run-speed-controls button {
+    flex: 1;
+    padding-inline: 8px;
+  }
+}
+
+@media (max-width: 420px) {
+  .dry-run-player {
+    padding: 8px;
+  }
+
+  .dry-run-info-bar,
+  .dry-run-toggle-bar,
+  .dry-run-variables,
+  .dry-run-controls {
+    padding-inline: 12px;
+  }
+
+  .dry-run-toggle-bar button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dry-run-visualizer {
+    min-height: 250px;
+    padding: 12px;
+  }
+}
