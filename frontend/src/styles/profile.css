@@ -352,18 +352,39 @@
 }
 
 /* Heatmap */
+.heatmap-card {
+  grid-column: 1 / -1;
+}
+
+.heatmap-layout {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.heatmap-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 4px;
+  flex: 0 0 44px;
+  padding-top: 20px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.58);
+}
+
 .heatmap-container {
   display: flex;
   flex-direction: column;
   overflow-x: auto;
   padding-bottom: 8px;
+  width: 100%;
 }
 
 .heatmap-months {
   display: grid;
-  font-size: 10px;
-  color: rgba(255,255,255,0.5);
-  margin-bottom: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.58);
+  margin-bottom: 8px;
   min-width: max-content;
   gap: 4px;
 }
@@ -378,8 +399,10 @@
 }
 
 .heatmap-cell {
-  border-radius: 2px;
-  background: rgba(255,255,255,0.05);
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.055);
 }
 
 .heatmap-container::-webkit-scrollbar {
@@ -571,32 +594,56 @@
 .friends-list {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  min-height: 72px;
 }
 
 .friend-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 210px;
+  max-width: 260px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.friend-item:hover {
+  transform: translateY(-2px);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(var(--primary-rgb), 0.35);
 }
 
 .friend-avatar {
   position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex: 0 0 52px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .friend-avatar img {
-  width: 56px;
-  height: 56px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid transparent;
+  display: block;
 }
 
 .friend-status {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
+  bottom: 3px;
+  right: 3px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -604,14 +651,27 @@
   border: 2px solid #0b1120;
 }
 
+.friend-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .friend-name {
-  font-size: 12px;
+  max-width: 170px;
+  font-size: 13px;
   font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .friend-handle {
   font-size: 11px;
   color: rgba(255,255,255,0.5);
+  white-space: nowrap;
 }
 
 .more-friends {

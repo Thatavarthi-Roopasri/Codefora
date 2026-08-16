@@ -20,7 +20,7 @@ const DIFFICULTY_COLOR = {
  */
 const DryRunPlayer = ({ problem }) => {
   const [stepIndex, setStepIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [showPseudo, setShowPseudo] = useState(false);
   const timerRef = useRef(null);
@@ -48,7 +48,7 @@ const DryRunPlayer = ({ problem }) => {
   // Reset when problem changes
   useEffect(() => {
     setStepIndex(0);
-    setIsPlaying(false);
+    setIsPlaying(true);
   }, [problem]);
 
   const play = useCallback(() => {

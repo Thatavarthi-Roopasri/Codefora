@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { UserCircle2, LogOut, User, Bell, Users, MessageCircle, UserMinus } from "lucide-react";
+import { UserCircle2, LogOut, User, Bell, Users, MessageCircle, UserMinus, Copy } from "lucide-react";
 import { createPortal } from "react-dom";
 import { BrandButton } from "./BrandButton";
 import { logoutUser } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { getProfile, api } from "../api/client";
+import { copyToClipboard } from "../lib/clipboard";
 import { API_URL } from "../config";
 import defaultAvatar from "../../assets/scene1.jpeg";
 
@@ -113,6 +114,8 @@ export function Navbar() {
   const [requestStatus, setRequestStatus] = useState("");
   const [searchedUser, setSearchedUser] = useState(null);
   const [friendCode, setFriendCode] = useState("");
+  const [friendCodeCopyStatus, setFriendCodeCopyStatus] = useState("");
+  const friendCodeCopyTimerRef = useRef(null);
   const [friendToRemove, setFriendToRemove] = useState(null);
   const [removingFriend, setRemovingFriend] = useState(false);
 
@@ -130,6 +133,14 @@ export function Navbar() {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (friendCodeCopyTimerRef.current) {
+        clearTimeout(friendCodeCopyTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -225,6 +236,27 @@ export function Navbar() {
     } catch (err) {
       setRequestStatus(err.message || "Failed to send");
     }
+  };
+
+  const handleCopyFriendCode = async () => {
+    const codeToCopy = String(friendCode || "").trim();
+    if (!codeToCopy) return;
+
+    if (friendCodeCopyTimerRef.current) {
+      clearTimeout(friendCodeCopyTimerRef.current);
+    }
+
+    try {
+      await copyToClipboard(codeToCopy);
+      setFriendCodeCopyStatus("Copied!");
+    } catch (err) {
+      setFriendCodeCopyStatus("Copy failed");
+    }
+
+    friendCodeCopyTimerRef.current = setTimeout(() => {
+      setFriendCodeCopyStatus("");
+      friendCodeCopyTimerRef.current = null;
+    }, 1600);
   };
 
   const handleRemoveFriend = async (friendId) => {
@@ -370,7 +402,40 @@ export function Navbar() {
                   {friendCode && (
                     <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '6px', padding: '8px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>Your USER ID:</span>
-                      <span style={{ fontFamily: 'monospace', color: 'var(--primary-accent)', fontWeight: 'bold' }}>{friendCode}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--primary-accent)', fontWeight: 'bold' }}>{friendCode}</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyFriendCode}
+                          title="Copy USER ID"
+                          aria-label="Copy USER ID"
+                          style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '6px',
+                            border: '1px solid rgba(255, 145, 0, 0.35)',
+                            background: 'rgba(255, 145, 0, 0.08)',
+                            color: 'var(--primary-accent)',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 0
+                          }}
+                        >
+                          <Copy size={13} />
+                        </button>
+                        {friendCodeCopyStatus && (
+                          <span style={{
+                            color: friendCodeCopyStatus === "Copied!" ? '#22c55e' : '#ff5555',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {friendCodeCopyStatus}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   )}
                   {/* Search Friend Input */}
@@ -553,7 +618,7 @@ export function Navbar() {
             <button 
               onClick={() => setShowDropdown(!showDropdown)}
               style={{
-                background: 'transparent', border: 'none', cursor: 'pointer',
+                background: 'transparent', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '0',
                 borderRadius: '50%', overflow: 'hidden', width: '36px', height: '36px',
                 border: emotionId ? '2px solid rgba(255,255,255,0.2)' : 'none'

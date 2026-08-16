@@ -13,9 +13,11 @@ import { useAuth } from "../hooks/useAuth";
 import { getProfile, saveProfile } from "../api/client";
 import { API_URL } from "../config";
 import { trackEvent } from "../lib/analytics";
+import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import "../styles/profile.css";
 
 import defaultAvatar from "../../assets/scene1.jpeg"; // Fallback banner
+
 
 function FriendProfileItem({ friend, navigate }) {
   const [profile, setProfile] = useState(null);
@@ -32,8 +34,8 @@ function FriendProfileItem({ friend, navigate }) {
   const emotionImage = profile?.emotionId ? `${API_URL}/api/emotions/${profile.emotionId}/image` : null;
 
   return (
-    <div className="friend-item" style={{ cursor: 'pointer', position: 'relative' }} onClick={() => navigate('/profile/' + (profile?.friendCode || friend.friendCode || friend.id))}>
-      <div className="friend-avatar" style={{ background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+    <div className="friend-item" onClick={() => navigate('/profile/' + (profile?.friendCode || friend.friendCode || friend.id))}>
+      <div className="friend-avatar">
         {emotionImage ? (
           <img src={emotionImage} alt={friend.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : profile?.photoURL ? (
@@ -51,10 +53,12 @@ function FriendProfileItem({ friend, navigate }) {
           title={profile?.presence === 'in-room' ? 'In Room' : profile?.presence === 'online' ? 'Online' : 'Offline'}
         />
       </div>
-      <div className="friend-name">{profile?.displayName || friend.name}</div>
-      {(profile?.friendCode || friend.friendCode) && (
-        <div className="friend-handle">USER ID: {profile?.friendCode || friend.friendCode}</div>
-      )}
+      <div className="friend-meta">
+        <div className="friend-name">{profile?.displayName || friend.name}</div>
+        {(profile?.friendCode || friend.friendCode) && (
+          <div className="friend-handle">USER ID: {profile?.friendCode || friend.friendCode}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -70,6 +74,8 @@ export function ProfilePage() {
   const [profileData, setProfileData] = useState({});
   const [myFriends, setMyFriends] = useState([]);
   const [toastMsg, setToastMsg] = useState("");
+  const [copyFeedback, setCopyFeedback] = useState("");
+  const copyFeedbackTimerRef = useRef(null);
   
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -106,6 +112,14 @@ export function ProfilePage() {
       heatmapContainerRef.current.scrollLeft = heatmapContainerRef.current.scrollWidth;
     }
   }, [loadingProfile]);
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current) {
+        clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!targetUserId) {
@@ -252,6 +266,29 @@ export function ProfilePage() {
     }
   };
 
+  const handleCopyUserId = async () => {
+    const userIdToCopy = String(profileData.friendCode ?? "").trim();
+    if (!userIdToCopy) return;
+
+    if (copyFeedbackTimerRef.current) {
+      clearTimeout(copyFeedbackTimerRef.current);
+    }
+
+    try {
+      await copyToClipboard(userIdToCopy);
+      setCopyFeedback("Copied!");
+      showToast("USER ID copied to clipboard!");
+    } catch (err) {
+      setCopyFeedback("Copy failed");
+      showToast("Failed to copy USER ID.");
+    }
+
+    copyFeedbackTimerRef.current = setTimeout(() => {
+      setCopyFeedback("");
+      copyFeedbackTimerRef.current = null;
+    }, 1800);
+  };
+
   if (loading || loadingProfile) {
     return (
       <main className="profile-dashboard">
@@ -329,22 +366,32 @@ export function ProfilePage() {
               <span style={{ fontSize: "12px", fontFamily: "monospace", color: "rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)", display: 'flex', alignItems: 'center', gap: '6px' }}>
                 USER ID: {profileData.friendCode || "..."}
                 {profileData.friendCode && (
-                  <button 
-                    onClick={async () => {
-                      try {
-                        await copyToClipboard(profileData.friendCode);
-                        showToast("USER ID copied to clipboard!");
-                      } catch (err) {
-                        showToast("Failed to copy USER ID.");
-                      }
-                    }}
-                    style={{ background: 'none', border: 'none', color: 'var(--primary-accent)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                  <button
+                    type="button"
+                    onClick={handleCopyUserId}
+                    aria-label="Copy USER ID"
+                    style={{ background: 'none', border: 'none', color: 'var(--primary-accent)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', borderRadius: '4px' }}
                     title="Copy USER ID"
                   >
                     <Copy size={12} />
                   </button>
                 )}
               </span>
+              {copyFeedback && (
+                <span style={{
+                  color: copyFeedback === "Copied!" ? '#22c55e' : '#ff5555',
+                  background: copyFeedback === "Copied!" ? 'rgba(34, 197, 94, 0.12)' : 'rgba(255, 85, 85, 0.12)',
+                  border: `1px solid ${copyFeedback === "Copied!" ? 'rgba(34, 197, 94, 0.35)' : 'rgba(255, 85, 85, 0.35)'}`,
+                  borderRadius: '999px',
+                  padding: '3px 8px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.25)'
+                }}>
+                  {copyFeedback}
+                </span>
+              )}
             </div>
 
             <div className="profile-badges">
@@ -400,7 +447,7 @@ export function ProfilePage() {
             <h3>Friends ({friends.length})</h3>
             <a href="#" className="view-all" onClick={(e) => { e.preventDefault(); setIsFriendsModalOpen(true); }}>View All</a>
           </div>
-          <div className="friends-list" style={{ overflowX: 'auto', paddingBottom: '8px', minHeight: '80px' }}>
+          <div className="friends-list">
             {friends.length > 0 ? (
               friends.map((friend, i) => (
                 <FriendProfileItem key={i} friend={friend} navigate={navigate} />
@@ -436,126 +483,12 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <div className="dashboard-card">
-            <div className="card-header">
-              <h3>Activity Heatmap</h3>
-              <span style={{fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>{new Date().getFullYear()}</span>
-            </div>
-            {(() => {
-              const currentYear = new Date().getFullYear();
-              const startDate = new Date(currentYear, 0, 1);
-              startDate.setDate(startDate.getDate() - startDate.getDay()); // Force Sunday
-
-              const endDate = new Date(currentYear, 11, 31);
-              endDate.setDate(endDate.getDate() + (6 - endDate.getDay())); // Force Saturday
-
-              const heatmapDays = [];
-              let curr = new Date(startDate);
-              curr.setHours(0,0,0,0);
-              const end = new Date(endDate);
-              end.setHours(23,59,59,999);
-
-              while (curr <= end) {
-                heatmapDays.push(new Date(curr));
-                curr.setDate(curr.getDate() + 1);
-              }
-
-              const actualWeeks = Math.ceil(heatmapDays.length / 7);
-
-              const visibleStartDate = new Date(currentYear, 0, 1);
-              visibleStartDate.setHours(0,0,0,0);
-              const visibleEndDate = new Date(currentYear, 11, 31);
-              visibleEndDate.setHours(23,59,59,999);
-
-              const monthLabels = [];
-              let lastMonth = -1;
-              let lastCol = -10;
-              for (let col = 0; col < actualWeeks; col++) {
-                const cellDate = heatmapDays[col * 7];
-                if (cellDate && cellDate.getMonth() !== lastMonth) {
-                  if (col - lastCol >= 3 && cellDate >= visibleStartDate && cellDate <= visibleEndDate) {
-                    monthLabels.push({ col, label: cellDate.toLocaleString('default', { month: 'short' }) });
-                    lastCol = col;
-                  }
-                  lastMonth = cellDate.getMonth();
-                }
-              }
-
-              return (
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 12px)', gap: '4px', fontSize: '10px', color: 'rgba(255,255,255,0.5)', paddingTop: '16px' }}>
-                    <span style={{visibility: 'hidden'}}>Sun</span>
-                    <span style={{display: 'flex', alignItems: 'center'}}>Mon</span>
-                    <span style={{visibility: 'hidden'}}>Tue</span>
-                    <span style={{display: 'flex', alignItems: 'center'}}>Wed</span>
-                    <span style={{visibility: 'hidden'}}>Thu</span>
-                    <span style={{display: 'flex', alignItems: 'center'}}>Fri</span>
-                    <span style={{visibility: 'hidden'}}>Sat</span>
-                  </div>
-                  <div className="heatmap-container" ref={heatmapContainerRef}>
-                    <div className="heatmap-months" style={{ gridTemplateColumns: `repeat(${actualWeeks}, 12px)` }}>
-                      {Array.from({ length: actualWeeks }).map((_, col) => {
-                        const labelObj = monthLabels.find(m => m.col === col);
-                        return <div key={col} style={{ textAlign: 'left', overflow: 'visible', whiteSpace: 'nowrap' }}>{labelObj ? labelObj.label : ""}</div>;
-                      })}
-                    </div>
-                    <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${actualWeeks}, 12px)` }}>
-                      {heatmapDays.map((cellDate, i) => {
-                        const isVisible = cellDate >= visibleStartDate && cellDate <= visibleEndDate;
-                        if (!isVisible) {
-                          return <div key={i} className="heatmap-cell" style={{ opacity: 0, pointerEvents: 'none' }}></div>;
-                        }
-
-                        const cellDateStr = cellDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                        const matchY = cellDate.getFullYear();
-                        const matchM = cellDate.getMonth();
-                        const matchD = cellDate.getDate();
-
-                        const actsOnDay = activities.filter(a => {
-                          if (!a.timestamp) return false;
-                          const d = new Date(a.timestamp);
-                          return d.getFullYear() === matchY && d.getMonth() === matchM && d.getDate() === matchD;
-                        }).length;
-
-                        let level = 0;
-                        if (actsOnDay === 1) level = 1;
-                        else if (actsOnDay === 2) level = 2;
-                        else if (actsOnDay >= 3) level = 3;
-
-                        const tooltipText = `${actsOnDay === 0 ? 'No' : actsOnDay} ${actsOnDay === 1 ? 'activity' : 'activities'} on ${cellDateStr}`;
-
-                        return (
-                          <div 
-                            key={i} 
-                            className={`heatmap-cell level-${level}`}
-                            onMouseEnter={(e) => {
-                              const rect = e.target.getBoundingClientRect();
-                              setHeatmapTooltip({
-                                visible: true,
-                                text: tooltipText,
-                                x: rect.left + rect.width / 2,
-                                y: rect.top - 8
-                              });
-                            }}
-                            onMouseLeave={() => setHeatmapTooltip(prev => ({ ...prev, visible: false }))}
-                          ></div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-            <div className="heatmap-footer">
-              <span>Less</span>
-              <div className="heatmap-legend">
-                <div className="legend-box" style={{background: 'rgba(255,255,255,0.05)'}}></div>
-                <div className="legend-box level-1"></div>
-                <div className="legend-box level-2"></div>
-                <div className="legend-box level-3"></div>
-              </div>
-              <span>More</span>
-            </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <ActivityHeatmap
+              activities={activities}
+              solvedProblems={profileData.solvedProblems}
+              stats={profileData.stats}
+            />
           </div>
         </div>
 

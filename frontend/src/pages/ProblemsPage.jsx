@@ -3,7 +3,7 @@ import { ArrowLeft, Bot, BookOpen, CheckCircle, Loader2, MessageCircle, MessageS
 import { dryRunComponents } from "../dryruns";
 import { PROBLEMS_DRYRUNS } from "../data/problemsDryRun";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, NavLink } from "react-router-dom";
+import { useLocation, useNavigate, NavLink } from "react-router-dom";
 import { api } from "../api/client";
 import { BrandButton } from "../components/BrandButton";
 import { Navbar } from "../components/Navbar";
@@ -32,8 +32,26 @@ function normalizeOutput(value) {
   return String(value || "").trim().replace(/\r/g, "").split(/\n+/).map((line) => line.trim().replace(/\s+/g, " ")).join("\n");
 }
 
+function normalizeProblemTitle(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+const dryRunNumberByTitle = PROBLEMS_DRYRUNS.reduce((map, problem, index) => {
+  map.set(normalizeProblemTitle(problem.title), index + 1);
+  return map;
+}, new Map());
+
+function getDryRunMatch(problem) {
+  const dryRunIndex = dryRunNumberByTitle.get(normalizeProblemTitle(problem?.title)) || 0;
+  return {
+    dryRunIndex,
+    hasDryRun: dryRunIndex > 0 && Boolean(dryRunComponents[dryRunIndex]),
+  };
+}
+
 export function ProblemsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [selectedDifficulty, setSelectedDifficulty] = useState("All");
@@ -71,6 +89,17 @@ export function ProblemsPage() {
   const selectedProblem = problems.find((problem) => problem.id === selectedProblemId) || null;
   const selectedLanguage = LANGUAGE_OPTIONS.find((item) => item.value === language) || LANGUAGE_OPTIONS[0];
   const code = codeByLanguage[language] || selectedLanguage.template;
+
+  useEffect(() => {
+    if (location.state?.returnToList) {
+      setSelectedProblemId(null);
+      return;
+    }
+
+    if (location.state?.selectedProblemId != null) {
+      setSelectedProblemId(location.state.selectedProblemId);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     localStorage.setItem("current_code", code || "");
@@ -419,9 +448,7 @@ export function ProblemsPage() {
                               <Users size={14} /> Create Room
                             </button>
                             {(() => {
-                              const originalIndex = problems.findIndex(p => p.id === problem.id);
-                              const dryRunIndex = originalIndex >= 0 ? originalIndex + 1 : 0;
-                              const hasDryRun = dryRunIndex > 0 && dryRunComponents[dryRunIndex];
+                              const { dryRunIndex, hasDryRun } = getDryRunMatch(problem);
                               return (
                                 <button 
                                   className="problems-v2-btn-create" 
@@ -433,7 +460,9 @@ export function ProblemsPage() {
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     if (hasDryRun) {
-                                      navigate(`/problems/${problem.id}/dry-run/${dryRunIndex}`);
+                                      navigate(`/problems/${problem.id}/dry-run/${dryRunIndex}`, {
+                                        state: { returnView: "list" }
+                                      });
                                     }
                                   }}
                                   title={hasDryRun ? "View Visual Dry Run" : "Dry run coming soon"}
@@ -509,9 +538,7 @@ export function ProblemsPage() {
                           Solve
                         </button>
                         {(() => {
-                          const originalIndex = problems.findIndex(p => p.id === problem.id);
-                          const dryRunIndex = originalIndex >= 0 ? originalIndex + 1 : 0;
-                          const hasDryRun = dryRunIndex > 0 && dryRunComponents[dryRunIndex];
+                          const { dryRunIndex, hasDryRun } = getDryRunMatch(problem);
                           return (
                             <button 
                               className="problems-v2-btn-create" 
@@ -528,7 +555,9 @@ export function ProblemsPage() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (hasDryRun) {
-                                  navigate(`/problems/${problem.id}/dry-run/${dryRunIndex}`);
+                                  navigate(`/problems/${problem.id}/dry-run/${dryRunIndex}`, {
+                                    state: { returnView: "list" }
+                                  });
                                 }
                               }}
                               title={hasDryRun ? "View Visual Dry Run" : "Dry run coming soon"}
@@ -609,14 +638,20 @@ export function ProblemsPage() {
                 setRoomName(`Problem Room: ${selectedProblem.title}`);
                 setShowRoomModal(true);
               }}
-              style={{ width: "100%", marginTop: "12px", marginBottom: "12px", backgroundColor: "var(--primary-color)", borderColor: "var(--primary-color)" }}
+              style={{
+                width: "100%",
+                marginTop: "12px",
+                marginBottom: "12px",
+                backgroundColor: "var(--primary-color)",
+                borderColor: "var(--primary-color)",
+                color: "#020617",
+                textShadow: "none",
+              }}
             >
-              <Users size={18} style={{ marginRight: "8px" }} /> Collaborate & Solve
+              <Users size={18} style={{ marginRight: "8px", color: "#020617" }} /> Collaborate & Solve
             </button>
             {(() => {
-              const originalIndex = problems.findIndex(p => p.id === selectedProblem.id);
-              const dryRunIndex = originalIndex >= 0 ? originalIndex + 1 : 0;
-              const hasDryRun = dryRunIndex > 0 && dryRunComponents[dryRunIndex];
+              const { dryRunIndex, hasDryRun } = getDryRunMatch(selectedProblem);
               return (
                 <button 
                   className="button button-primary collaborate-btn" 
@@ -630,7 +665,9 @@ export function ProblemsPage() {
                   }}
                   onClick={(e) => {
                     if (hasDryRun) {
-                      navigate(`/problems/${selectedProblem.id}/dry-run/${dryRunIndex}`);
+                      navigate(`/problems/${selectedProblem.id}/dry-run/${dryRunIndex}`, {
+                        state: { returnView: "detail", selectedProblemId: selectedProblem.id }
+                      });
                     }
                   }}
                   title={hasDryRun ? "View Visual Dry Run" : "Dry run coming soon"}
@@ -680,9 +717,9 @@ export function ProblemsPage() {
         <section className="problem-code-panel">
           <div className="problem-code-toolbar">
             <div className="code-toolbar-left">
-              <select className="run-file-select" value={selectedLanguage.file} onChange={() => {}} aria-label="Current file">
-                <option>{selectedLanguage.file}</option>
-              </select>
+              <span className="run-file-select" aria-label="Current file">
+                {selectedLanguage.file}
+              </span>
               <button className="button primary run-btn tour-problem-run" onClick={handleCompile} disabled={isRunning}>
                 {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                 <span>Run Code</span>
