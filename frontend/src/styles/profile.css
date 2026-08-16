@@ -4,6 +4,8 @@
   color: #fff;
   min-height: 100vh;
   font-family: 'Inter', system-ui, sans-serif;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .profile-content {
@@ -13,6 +15,9 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Header Section */
@@ -352,18 +357,39 @@
 }
 
 /* Heatmap */
+.heatmap-card {
+  grid-column: 1 / -1;
+}
+
+.heatmap-layout {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.heatmap-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 4px;
+  flex: 0 0 44px;
+  padding-top: 20px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.58);
+}
+
 .heatmap-container {
   display: flex;
   flex-direction: column;
   overflow-x: auto;
   padding-bottom: 8px;
+  width: 100%;
 }
 
 .heatmap-months {
   display: grid;
-  font-size: 10px;
-  color: rgba(255,255,255,0.5);
-  margin-bottom: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.58);
+  margin-bottom: 8px;
   min-width: max-content;
   gap: 4px;
 }
@@ -378,8 +404,10 @@
 }
 
 .heatmap-cell {
-  border-radius: 2px;
-  background: rgba(255,255,255,0.05);
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.055);
 }
 
 .heatmap-container::-webkit-scrollbar {
@@ -571,32 +599,56 @@
 .friends-list {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  min-height: 72px;
 }
 
 .friend-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 210px;
+  max-width: 260px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.friend-item:hover {
+  transform: translateY(-2px);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(var(--primary-rgb), 0.35);
 }
 
 .friend-avatar {
   position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  flex: 0 0 52px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .friend-avatar img {
-  width: 56px;
-  height: 56px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid transparent;
+  display: block;
 }
 
 .friend-status {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
+  bottom: 3px;
+  right: 3px;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -604,14 +656,27 @@
   border: 2px solid #0b1120;
 }
 
+.friend-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .friend-name {
-  font-size: 12px;
+  max-width: 170px;
+  font-size: 13px;
   font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .friend-handle {
   font-size: 11px;
   color: rgba(255,255,255,0.5);
+  white-space: nowrap;
 }
 
 .more-friends {
@@ -758,6 +823,40 @@
 
 /* Responsive */
 @media (max-width: 1024px) {
+  .profile-content {
+    max-width: 900px;
+    padding: 28px 20px;
+    gap: 20px;
+  }
+
+  .profile-header-card {
+    gap: 24px;
+    padding: 28px;
+  }
+
+  .avatar-container {
+    width: 116px;
+    height: 116px;
+    flex: 0 0 116px;
+  }
+
+  .stats-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px 12px;
+  }
+
+  .dashboard-grid-2 {
+    gap: 18px;
+  }
+
+  .dashboard-card {
+    padding: 20px;
+  }
+
   .dashboard-grid-3 {
     grid-template-columns: 1fr 1fr;
   }
@@ -775,6 +874,194 @@
     text-align: center;
   }
   .profile-name-row, .profile-badges, .profile-bio, .profile-actions {
+    justify-content: center;
+  }
+
+  .profile-name-row {
+    flex-wrap: wrap;
+  }
+
+  .profile-name-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .profile-content {
+    padding: 16px 12px 24px;
+    gap: 16px;
+  }
+
+  .dashboard-grid-2 > *,
+  .dashboard-grid-3 > * {
+    min-width: 0;
+  }
+
+  .profile-header-card {
+    gap: 16px;
+    padding: 20px 16px;
+    border-radius: 12px;
+  }
+
+  .avatar-container {
+    width: 96px;
+    height: 96px;
+    flex-basis: 96px;
+  }
+
+  .profile-name-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .profile-name-row h1 {
+    max-width: 100%;
+    font-size: 26px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .profile-name-actions {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px !important;
+  }
+
+  .profile-name-actions .btn-secondary {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    padding: 8px !important;
+  }
+
+  .profile-handle {
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .profile-handle > span:first-child {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .profile-badges {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .rank-badge {
+    padding: 4px 9px;
+  }
+
+  .profile-bio {
+    margin-bottom: 0;
+    line-height: 1.5;
+  }
+
+  .stats-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat-card {
+    min-height: 106px;
+    padding: 14px 8px;
+  }
+
+  .stat-header {
+    justify-content: center;
+    gap: 5px;
+    font-size: 11px;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .dashboard-grid-2,
+  .dashboard-grid-3 {
+    gap: 16px;
+  }
+
+  .dashboard-card {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .card-header {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .card-header h3 {
+    font-size: 15px;
+  }
+
+  .friends-list {
+    gap: 10px;
+    margin-inline: -2px;
+  }
+
+  .friend-item {
+    min-width: 190px;
+    padding: 8px 12px 8px 8px;
+  }
+
+  .friend-avatar {
+    width: 46px;
+    height: 46px;
+    flex-basis: 46px;
+  }
+
+  .achievements-grid {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .donut-container {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .activity-item {
+    gap: 10px;
+  }
+
+  .activity-meta {
+    min-width: 68px;
+  }
+
+  .modal-content {
+    width: calc(100% - 24px);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 12px;
+  }
+
+  .friends-modal {
+    height: min(600px, calc(100dvh - 24px)) !important;
+  }
+
+  .modal-footer {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .modal-footer .btn-primary,
+  .modal-footer .btn-secondary {
+    flex: 1 1 140px;
     justify-content: center;
   }
 }

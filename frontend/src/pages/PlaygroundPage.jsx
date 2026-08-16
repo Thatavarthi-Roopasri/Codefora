@@ -51,7 +51,7 @@ export function PlaygroundPage() {
   const [consoleHeight, setConsoleHeight] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState("editor");
-  const [isSplitView, setIsSplitView] = useState(true);
+  const [isSplitView, setIsSplitView] = useState(false);
   const [consoleMode, setConsoleMode] = useState("output");
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const resizeStart = useRef({ y: 0, height: 300 });
@@ -144,6 +144,16 @@ export function PlaygroundPage() {
 
   const [previewTarget, setPreviewTarget] = useState(null);
   const activeFile = files.find(f => f.name === activeName) || files[0];
+  const hasHtmlFile = files.some(file => file.language === "html" && file.code?.trim());
+  const previewAvailable = hasHtmlFile;
+
+  useEffect(() => {
+    if (!previewAvailable && (activeMainTab === "preview" || consoleMode === "preview" || isSplitView)) {
+      setActiveMainTab("editor");
+      setConsoleMode("output");
+      setIsSplitView(false);
+    }
+  }, [previewAvailable, activeMainTab, consoleMode, isSplitView]);
 
   useEffect(() => {
     if (activeFile) {
@@ -162,6 +172,12 @@ export function PlaygroundPage() {
 
   const handleRun = async () => {
     if (activeFile.language === 'html' || activeFile.language === 'css') {
+      if (!previewAvailable) {
+        setConsoleMode("output");
+        setIsConsoleOpen(true);
+        setOutput("Add an HTML file to use Web Preview.");
+        return;
+      }
       if (activeFile.language === 'html') {
         setPreviewTarget(activeFile.name);
       }
@@ -244,7 +260,7 @@ export function PlaygroundPage() {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
+        <div className="playground-header-primary" style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-orange)', minWidth: 'fit-content' }}>
             <Layout size={20} />
             <h2 style={{ fontSize: '1.1rem', margin: 0, fontWeight: '700' }}>Playground</h2>
@@ -309,7 +325,7 @@ export function PlaygroundPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div className="playground-header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <button 
             className="button primary compact tour-pg-run" 
             onClick={handleRun} 
@@ -375,10 +391,10 @@ export function PlaygroundPage() {
       </div>
 
       <div className="playground-main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <div className="playground-workspace-row" style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {/* Editor Section */}
           {(activeMainTab === 'editor' || isSplitView) && (
-            <div className="tour-pg-editor" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+            <div className="tour-pg-editor playground-editor-pane" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <Editor
                 height="100%"
                 theme="vs-dark"
@@ -398,15 +414,28 @@ export function PlaygroundPage() {
           )}
 
           {/* Preview Section */}
-          {(activeMainTab === 'preview' || (isSplitView && activeMainTab === 'editor')) && (
-            <div style={{ width: isSplitView ? '40%' : '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderLeft: isSplitView ? '1px solid var(--line)' : 'none', minHeight: 0, overflow: 'hidden' }}>
+          {previewAvailable && (activeMainTab === 'preview' || (isSplitView && activeMainTab === 'editor')) && (
+            <div className="playground-preview-pane" style={{ width: isSplitView ? '40%' : '100%', display: 'flex', flexDirection: 'column', background: '#fff', borderLeft: isSplitView ? '1px solid var(--line)' : 'none', minHeight: 0, overflow: 'hidden' }}>
               <div style={{ padding: '8px 16px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#64748b' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Globe size={14} />
                   <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Web Preview</span>
                 </div>
-                {activeMainTab === 'preview' && !isSplitView && (
-                  <button onClick={() => { setActiveMainTab('editor'); setIsSplitView(true); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }} title="Close Full Screen">
+                {isSplitView ? (
+                  <button
+                    onClick={() => {
+                      setIsSplitView(false);
+                      setIsConsoleOpen(true);
+                      setConsoleMode('output');
+                    }}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}
+                    title="Close Split Screen"
+                    aria-label="Close Split Screen"
+                  >
+                    <XIcon size={16} />
+                  </button>
+                ) : activeMainTab === 'preview' && (
+                  <button onClick={() => { setActiveMainTab('editor'); setIsConsoleOpen(true); setConsoleMode('output'); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }} title="Close Full Screen">
                     <XIcon size={14} />
                   </button>
                 )}
@@ -423,7 +452,7 @@ export function PlaygroundPage() {
         {isConsoleOpen && (
           <ConsolePanel
             output={output}
-            preview={{ showPreview: true, previewDoc }}
+            preview={previewAvailable ? { showPreview: true, previewDoc } : null}
             style={{ height: `${consoleHeight}px`, flex: "0 0 auto", borderTop: '2px solid var(--primary-orange)' }}
             onResizeStart={(e) => {
               e.preventDefault();
@@ -436,11 +465,13 @@ export function PlaygroundPage() {
             panelMode={consoleMode}
             setPanelMode={setConsoleMode}
             onOpenSplitPreview={() => {
+              if (!previewAvailable) return;
               setActiveMainTab('editor');
               setIsSplitView(true);
               setIsConsoleOpen(false);
             }}
             onOpenFullPreview={() => {
+              if (!previewAvailable) return;
               setActiveMainTab('preview');
               setIsSplitView(false);
               setIsConsoleOpen(false);
