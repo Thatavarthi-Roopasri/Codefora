@@ -1,7 +1,7 @@
 import { createFirestore, admin } from "../config/firebase.js";
 import { readLocalNotifications, writeLocalNotifications } from "../utils/mockNotifications.js";
 
-export function createNotificationController() {
+export function createNotificationController({ auditService } = {}) {
   const db = createFirestore();
 
   return {
@@ -110,6 +110,8 @@ export function createNotificationController() {
             });
           }
           await writeLocalNotifications(allNotifs);
+          auditService?.record({ actor: request.adminUser, action: "announcement.sent", target: `${userIds.length} users`, details: message })
+            .catch((error) => console.warn("Announcement audit record failed:", error.message));
           return response.json({ success: true, count: userIds.length });
         }
 
@@ -136,6 +138,8 @@ export function createNotificationController() {
           await batch.commit();
         }
 
+        auditService?.record({ actor: request.adminUser, action: "announcement.sent", target: `${userIds.length} users`, details: message })
+          .catch((error) => console.warn("Announcement audit record failed:", error.message));
         return response.json({ success: true, count: userIds.length });
       } catch (err) {
         console.error("Failed to send announcement:", err);

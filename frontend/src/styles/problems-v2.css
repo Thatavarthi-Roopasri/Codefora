@@ -1,7 +1,14 @@
-/* 
+/*
   Problems Page Redesign v2
   Based on user mockup
 */
+
+.problem-test-summary {
+  margin: -4px 0 14px;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
 
 .problems-v2-shell {
   display: flex;
@@ -173,6 +180,11 @@
   outline: none;
   appearance: none;
   cursor: pointer;
+}
+
+.problems-v2-sort option {
+  color: #ffffff;
+  background: #111827;
 }
 
 .problems-v2-sort-wrapper {

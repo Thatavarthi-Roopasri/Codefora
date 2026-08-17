@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { toPublicProblem } from "../services/problemJudgeService.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localProblemsPath = path.join(__dirname, "../data/problems.json");
@@ -20,7 +21,7 @@ export function createProblemController() {
       try {
         const problems = await readJSON(localProblemsPath);
         // Return only published problems for public view
-        const published = problems.filter(p => p.published !== false);
+        const published = problems.filter(p => p.published !== false).map(toPublicProblem);
         return response.json(published);
       } catch (error) {
         return response.status(500).json({ error: "Could not fetch problems" });
@@ -32,7 +33,7 @@ export function createProblemController() {
         const problems = await readJSON(localProblemsPath);
         const problem = problems.find(p => p.id === id);
         if (!problem) return response.status(404).json({ error: "Problem not found" });
-        return response.json(problem);
+        return response.json(toPublicProblem(problem));
       } catch (error) {
         return response.status(500).json({ error: "Could not fetch problem" });
       }

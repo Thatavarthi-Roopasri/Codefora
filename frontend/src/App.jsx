@@ -22,7 +22,8 @@ import { ShippingDeliveryPage } from "./pages/ShippingDeliveryPage";
 import { useLocation } from "react-router-dom";
 import { trackPageView } from "./lib/analytics";
 import { useAuth } from "./hooks/useAuth";
-import { API_URL } from "./config";
+import { api } from "./api/client";
+import { isGuestUser } from "./lib/userAccess";
 
 import { socket } from "./lib/socket";
 import GlobalAiChat from "./components/GlobalAiChat";
@@ -45,23 +46,32 @@ function LoaderManager({ children }) {
 
   useEffect(() => {
     // Global Community Theme Sync & Online Presence
-    if (!user) {
+    if (!user || isGuestUser(user)) {
       document.documentElement.dataset.community = "sider";
       return;
     }
-    
-    // Connect socket for global online presence tracking
-    socket.connect();
-    socket.emit("user:presence", user.uid);
 
-    fetch(`${API_URL}/api/profiles/${user.uid}`)
-      .then(r => r.json())
-      .then(profile => {
+    let active = true;
+    async function startAuthenticatedSession() {
+      try {
+        const profile = await api.bootstrapProfile();
+        if (!active) return;
         const comm = profile.community || "sider";
         document.documentElement.dataset.community = comm;
         localStorage.setItem("codefora_community", comm);
-      })
-      .catch(console.error);
+        localStorage.setItem("codefora_user_id", user.uid);
+        localStorage.setItem("codefora_username", profile.displayName || user.displayName || user.email?.split("@")[0] || "Developer");
+        window.dispatchEvent(new Event("profileUpdated"));
+
+        socket.connect();
+        socket.emit("user:presence", user.uid);
+      } catch (error) {
+        console.error("Profile bootstrap failed:", error);
+      }
+    }
+
+    startAuthenticatedSession();
+    return () => { active = false; };
   }, [user]);
 
   useEffect(() => {

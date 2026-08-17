@@ -6,15 +6,26 @@ import { api } from '../api/client';
 import { API_URL } from '../config';
 import { 
   Users, Server, Code, Trophy, 
-  Activity, ShieldAlert, Settings, LayoutDashboard,
+  Activity, BarChart3, CheckCircle2, ShieldAlert, Settings, LayoutDashboard,
   Eye, Lock, Trash2, Edit, AlertTriangle, Play, RefreshCw,
-  MessageSquare, Star
+  MessageSquare, Star, Ban, UserCheck, FileText, Timer
 } from 'lucide-react';
 import '../styles/admin.css';
 
+function toActivityLog(entry) {
+  const action = String(entry.action || 'admin.action').replace(/[._]/g, ' ');
+  const target = entry.target ? `: ${entry.target}` : '';
+  return {
+    icon: <Activity size={16} />,
+    class: entry.action?.includes('deleted') || entry.action?.includes('blocked') ? 'deleted' : 'updated',
+    text: `${action}${target}`,
+    time: entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'just now'
+  };
+}
+
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -27,6 +38,11 @@ export default function AdminDashboardPage() {
   const [problemList, setProblemList] = useState([]);
   const [users, setUsers] = useState([]);
   const [feedbackList, setFeedbackList] = useState([]);
+  const [feedbackFilter, setFeedbackFilter] = useState('open');
+  const [moderatingId, setModeratingId] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [submissionFilter, setSubmissionFilter] = useState('all');
+  const [accountActionId, setAccountActionId] = useState(null);
   
   // Announcement states
   const [announcementText, setAnnouncementText] = useState('');
@@ -48,12 +64,14 @@ export default function AdminDashboardPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [s, r, p, u, f] = await Promise.all([
+      const [s, r, p, u, f, submissionData, auditData] = await Promise.all([
         api.request("/api/admin/stats"),
         api.request("/api/admin/rooms"),
         api.request("/api/admin/problems"),
         api.request("/api/admin/users"),
-        api.request("/api/admin/feedback")
+        api.request("/api/admin/feedback"),
+        api.request("/api/admin/submissions").catch(() => []),
+        api.request("/api/admin/audit-log").catch(() => [])
       ]);
       setStatsData(s);
       setIsSuperAdmin(s.isSuperAdmin || false);
@@ -65,6 +83,10 @@ export default function AdminDashboardPage() {
         setAnnouncementUsersInitialized(true);
       }
       setFeedbackList(f || []);
+      setSubmissions(Array.isArray(submissionData) ? submissionData : []);
+      setActivityLog(Array.isArray(auditData) && auditData.length
+        ? auditData.map(toActivityLog)
+        : [{ icon: <Activity size={16} />, class: 'updated', text: 'System initialized and connected to server.', time: 'just now' }]);
       setAuthError(false);
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
@@ -85,7 +107,7 @@ export default function AdminDashboardPage() {
     try {
       await api.request(`/api/admin/rooms/${id}`, { method: 'DELETE' });
       setRooms(prev => prev.filter(r => r.id !== id));
-      setActivityLog(prev => [{ icon: <Trash2 size={16} />, class: 'deleted', text: `Room <strong>${id}</strong> was removed manually.`, time: 'just now' }, ...prev]);
+      setActivityLog(prev => [{ icon: <Trash2 size={16} />, class: 'deleted', text: `Room ${id} was removed.`, time: 'just now' }, ...prev]);
     } catch (err) { alert(err.message); }
   };
 
@@ -93,7 +115,7 @@ export default function AdminDashboardPage() {
     try {
       const res = await api.request(`/api/admin/rooms/${id}/lock`, { method: 'POST' });
       setRooms(prev => prev.map(r => r.id === id ? { ...r, isLocked: res.isLocked } : r));
-      setActivityLog(prev => [{ icon: <Lock size={16} />, class: 'locked', text: `Room <strong>${id}</strong> was ${res.isLocked ? 'locked' : 'unlocked'}.`, time: 'just now' }, ...prev]);
+      setActivityLog(prev => [{ icon: <Lock size={16} />, class: 'locked', text: `Room ${id} was ${res.isLocked ? 'locked' : 'unlocked'}.`, time: 'just now' }, ...prev]);
     } catch (err) { alert(err.message); }
   };
 
@@ -106,6 +128,9 @@ export default function AdminDashboardPage() {
 
   const [showProblemForm, setShowProblemForm] = useState(false);
   const [editingProblem, setEditingProblem] = useState(null);
+  const [showRoomForm, setShowRoomForm] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [roomFormStatus, setRoomFormStatus] = useState('');
 
   const handleSaveProblem = async (e) => {
     e.preventDefault();
@@ -122,9 +147,11 @@ export default function AdminDashboardPage() {
       constraints: rawData.constraints.split('\n').map(c => c.trim()).filter(Boolean),
       solutionAvailable: e.target.solutionAvailable.checked,
       hint: rawData.hint || "",
+      timeLimit: rawData.timeLimit || "1.0s",
       tests: [
-        { input: rawData.test1Input, output: rawData.test1Output },
-        { input: rawData.test2Input, output: rawData.test2Output }
+        { input: rawData.test1Input, output: rawData.test1Output, hidden: e.target.test1Hidden.checked },
+        { input: rawData.test2Input, output: rawData.test2Output, hidden: e.target.test2Hidden.checked },
+        ...(editingProblem?.tests || []).slice(2)
       ].filter(t => t.input || t.output)
     };
     
@@ -137,8 +164,51 @@ export default function AdminDashboardPage() {
       setShowProblemForm(false);
       setEditingProblem(null);
       fetchData();
-      setActivityLog(prev => [{ icon: <Code size={16} />, class: 'updated', text: `Problem <strong>${data.title}</strong> was ${editingProblem ? 'updated' : 'created'}.`, time: 'just now' }, ...prev]);
+      setActivityLog(prev => [{ icon: <Code size={16} />, class: 'updated', text: `Problem ${data.title} was ${editingProblem ? 'updated' : 'created'}.`, time: 'just now' }, ...prev]);
     } catch (err) { alert(err.message); }
+  };
+
+  const openProblemForm = () => {
+    setActiveTab('Problems');
+    setEditingProblem(null);
+    setShowProblemForm(true);
+  };
+
+  const openRoomForm = () => {
+    setActiveTab('Rooms');
+    setRoomFormStatus('');
+    setShowRoomForm(true);
+  };
+
+  const handleCreateRoom = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get('name') || '').trim();
+    if (!name) return;
+
+    setCreatingRoom(true);
+    setRoomFormStatus('');
+    try {
+      const room = await api.createRoom({
+        name,
+        visibility: formData.get('visibility'),
+        max: Number(formData.get('max')),
+        username: user?.displayName || user?.email?.split('@')[0] || 'Administrator',
+        userId: user?.uid || null
+      });
+      setShowRoomForm(false);
+      setActivityLog((current) => [{
+        icon: <Server size={16} />,
+        class: 'updated',
+        text: `Room ${room.name} was created.`,
+        time: 'just now'
+      }, ...current]);
+      await fetchData();
+    } catch (error) {
+      setRoomFormStatus(error.message || 'Could not create the room.');
+    } finally {
+      setCreatingRoom(false);
+    }
   };
 
   const handleToggleRole = async (userId, currentRole) => {
@@ -146,9 +216,50 @@ export default function AdminDashboardPage() {
     try {
       await api.request(`/api/admin/users/${userId}/role`, { method: 'POST', body: JSON.stringify({ role: newRole }) });
       setUsers(prev => prev.map(u => u.userId === userId ? { ...u, role: newRole } : u));
-      setActivityLog(prev => [{ icon: <ShieldAlert size={16} />, class: 'updated', text: `User <strong>${userId}</strong> is now ${newRole}.`, time: 'just now' }, ...prev]);
+      setActivityLog(prev => [{ icon: <ShieldAlert size={16} />, class: 'updated', text: `User ${userId} is now ${newRole}.`, time: 'just now' }, ...prev]);
     } catch (err) {
       alert("Failed to change role: " + err.message);
+    }
+  };
+
+  const handleAccountStatus = async (userId, status) => {
+    setAccountActionId(userId);
+    try {
+      await api.request(`/api/admin/users/${userId}/account-status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      setUsers((current) => current.map((user) => (
+        user.userId === userId ? { ...user, moderationStatus: status } : user
+      )));
+      setActivityLog((current) => [{ icon: status === 'active' ? <UserCheck size={16} /> : <Ban size={16} />, class: status === 'active' ? 'updated' : 'deleted', text: `User ${userId} was marked ${status}.`, time: 'just now' }, ...current]);
+    } catch (error) {
+      alert(`Unable to update account status: ${error.message}`);
+    } finally {
+      setAccountActionId(null);
+    }
+  };
+
+  const handleFeedbackStatus = async (item, status) => {
+    setModeratingId(`${item.id}:${status}`);
+    try {
+      const response = await api.request(`/api/admin/feedback/${item.id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      setFeedbackList((current) => current.map((feedback) => (
+        feedback.id === item.id ? { ...feedback, ...response.feedback } : feedback
+      )));
+      setActivityLog((current) => [{
+        icon: <CheckCircle2 size={16} />,
+        class: 'updated',
+        text: `${item.reportedId ? 'Report' : 'Feedback'} ${item.id} was marked ${status}.`,
+        time: 'just now'
+      }, ...current]);
+    } catch (error) {
+      alert(`Unable to update this item: ${error.message}`);
+    } finally {
+      setModeratingId(null);
     }
   };
 
@@ -174,6 +285,8 @@ export default function AdminDashboardPage() {
     { label: 'Online Users', value: statsData.onlineUsers, trend: 'Live now', isLive: true, icon: <Activity />, color: '#50FA7B' },
     { label: 'Active Rooms', value: statsData.activeRooms, trend: '+ 8 from yesterday', icon: <Server />, color: '#FFB86C' },
     { label: 'Total Problems', value: statsData.totalProblems, trend: '+ 3 new this week', icon: <Code />, color: '#BD93F9' },
+    { label: 'Submissions', value: statsData.totalSubmissions || 0, trend: `${statsData.acceptanceRate || 0}% accepted`, icon: <FileText />, color: '#F59E0B' },
+    { label: 'Open Reports', value: feedbackList.filter((item) => item.type === 'report' && (item.status || 'open') === 'open').length, trend: `${feedbackList.filter((item) => item.type !== 'report').length} feedback items`, icon: <ShieldAlert />, color: '#FF5555' },
     { label: 'Most Solved', value: statsData.mostSolved, trend: 'Solved 3,421 times', icon: <Trophy />, color: '#FF79C6' },
   ] : [];
 
@@ -187,8 +300,49 @@ export default function AdminDashboardPage() {
     reporterId: f.reporterId || 'No ID',
     reason: f.message || 'No reason provided',
     time: f.timestamp ? new Date(f.timestamp).toLocaleString() : (f.createdAt ? new Date(f.createdAt).toLocaleString() : 'Just now'),
-    id: f.id
+    id: f.id,
+    status: f.status || 'open'
   }));
+  const feedbackItems = feedbackList.filter((feedback) => feedback.type !== 'report');
+  const visibleFeedback = feedbackItems.filter((feedback) => (
+    feedbackFilter === 'all' || (feedback.status || 'open') === feedbackFilter
+  ));
+  const averageRating = feedbackItems.length
+    ? (feedbackItems.reduce((total, feedback) => total + (Number(feedback.rating) || 0), 0) / feedbackItems.length).toFixed(1)
+    : '0.0';
+  const verdictCounts = submissions.reduce((counts, submission) => {
+    counts[submission.verdict] = (counts[submission.verdict] || 0) + 1;
+    return counts;
+  }, {});
+  const languageCounts = submissions.reduce((counts, submission) => {
+    const language = submission.language || 'unknown';
+    counts[language] = (counts[language] || 0) + 1;
+    return counts;
+  }, {});
+  const problemCounts = submissions.reduce((counts, submission) => {
+    const problemId = submission.problemId || 'unknown';
+    if (!counts[problemId]) counts[problemId] = { attempts: 0, accepted: 0 };
+    counts[problemId].attempts += 1;
+    if (submission.verdict === 'accepted') counts[problemId].accepted += 1;
+    return counts;
+  }, {});
+  const topAttempted = Object.entries(problemCounts).sort(([, a], [, b]) => b.attempts - a.attempts)[0];
+  const lowestAcceptance = Object.entries(problemCounts)
+    .filter(([, value]) => value.attempts > 0)
+    .sort(([, a], [, b]) => (a.accepted / a.attempts) - (b.accepted / b.attempts))[0];
+  const topLanguage = Object.entries(languageCounts).sort(([, a], [, b]) => b - a)[0];
+  const visibleSubmissions = submissions.filter((submission) => submissionFilter === 'all' || submission.verdict === submissionFilter);
+  const analytics = [
+    { label: 'Total submissions', value: submissions.length, detail: `${verdictCounts.accepted || 0} accepted`, icon: <FileText size={18} />, tone: 'info' },
+    { label: 'Time limits', value: verdictCounts.time_limit_exceeded || 0, detail: 'Execution-limit verdicts', icon: <Timer size={18} />, tone: 'warning' },
+    { label: 'Most attempted', value: topAttempted ? (problemList.find((problem) => problem.id === topAttempted[0])?.title || topAttempted[0]) : 'No submissions', detail: topAttempted ? `${topAttempted[1].attempts} attempts` : 'Waiting for activity', icon: <BarChart3 size={18} />, tone: 'success' },
+    { label: 'Lowest acceptance', value: lowestAcceptance ? `${Math.round((lowestAcceptance[1].accepted / lowestAcceptance[1].attempts) * 100)}%` : 'No data', detail: lowestAcceptance ? (problemList.find((problem) => problem.id === lowestAcceptance[0])?.title || lowestAcceptance[0]) : 'Waiting for activity', icon: <AlertTriangle size={18} />, tone: 'danger' },
+    { label: 'Popular language', value: topLanguage ? topLanguage[0] : 'No data', detail: topLanguage ? `${topLanguage[1]} submissions` : 'Waiting for activity', icon: <Code size={18} />, tone: 'info' },
+    { label: 'Open reports', value: reports.filter((report) => report.status === 'open').length, detail: 'Need review', icon: <ShieldAlert size={18} />, tone: 'danger' },
+    { label: 'Feedback received', value: feedbackItems.length, detail: `${averageRating}/5 average rating`, icon: <MessageSquare size={18} />, tone: 'info' },
+    { label: 'Active rooms', value: rooms.length, detail: `${rooms.filter((room) => room.isLocked).length} locked`, icon: <Server size={18} />, tone: 'warning' },
+    { label: 'Published problems', value: problemList.filter((problem) => problem.published).length, detail: `${problemList.length} total problems`, icon: <Code size={18} />, tone: 'success' }
+  ];
 
   // The activityLog state is defined above, removing the static duplicate.
 
@@ -207,6 +361,9 @@ export default function AdminDashboardPage() {
             <button className={`admin-nav-item ${activeTab === 'Problems' ? 'active' : ''}`} onClick={() => setActiveTab('Problems')}>
               <Code size={18} /> Problems
             </button>
+            <button className={`admin-nav-item ${activeTab === 'Submissions' ? 'active' : ''}`} onClick={() => setActiveTab('Submissions')}>
+              <FileText size={18} /> Submissions
+            </button>
             <button className={`admin-nav-item ${activeTab === 'Rooms' ? 'active' : ''}`} onClick={() => setActiveTab('Rooms')}>
               <Server size={18} /> Rooms
             </button>
@@ -223,11 +380,11 @@ export default function AdminDashboardPage() {
 
           <div className="admin-sidebar-section" style={{ marginTop: '10px' }}>
             <div className="admin-sidebar-title">Analytics</div>
-            <button className="admin-nav-item">
-              <Activity size={18} /> Analytics
+            <button className={`admin-nav-item ${activeTab === 'Analytics' ? 'active' : ''}`} onClick={() => setActiveTab('Analytics')}>
+              <BarChart3 size={18} /> Analytics
             </button>
-            <button className="admin-nav-item">
-              <Play size={18} /> Activity Logs
+            <button className={`admin-nav-item ${activeTab === 'Activity Logs' ? 'active' : ''}`} onClick={() => setActiveTab('Activity Logs')}>
+              <Activity size={18} /> Live Activity
             </button>
           </div>
 
@@ -243,10 +400,10 @@ export default function AdminDashboardPage() {
 
           <div className="admin-sidebar-section" style={{ marginTop: '20px' }}>
             <div className="admin-sidebar-title" style={{ color: 'var(--primary-accent)' }}>⚡ Quick Actions</div>
-            <button className="admin-nav-item" onClick={() => { setEditingProblem(null); setShowProblemForm(true); }} style={{ border: '1px solid rgba(139, 233, 253, 0.2)', color: '#8BE9FD', justifyContent: 'center' }}>
+            <button className="admin-nav-item" onClick={openProblemForm} style={{ border: '1px solid rgba(139, 233, 253, 0.2)', color: '#8BE9FD', justifyContent: 'center' }}>
               + Add Problem
             </button>
-            <button className="admin-nav-item" style={{ border: '1px solid rgba(255, 145, 0, 0.2)', color: 'var(--primary-accent)', justifyContent: 'center' }}>
+            <button className="admin-nav-item" onClick={openRoomForm} style={{ border: '1px solid rgba(255, 145, 0, 0.2)', color: 'var(--primary-accent)', justifyContent: 'center' }}>
               + Create Room
             </button>
           </div>
@@ -295,6 +452,10 @@ export default function AdminDashboardPage() {
                       <label className="admin-setting-label">Acceptance %</label>
                       <input name="acceptance" type="number" className="admin-input" defaultValue={editingProblem?.acceptance || 50} />
                     </div>
+                    <div className="admin-setting-group" style={{ flex: 0.5 }}>
+                      <label className="admin-setting-label">Time Limit</label>
+                      <input name="timeLimit" className="admin-input" defaultValue={editingProblem?.timeLimit || "1.0s"} placeholder="e.g. 1.0s" />
+                    </div>
                   </div>
 
                   <div className="admin-setting-group checkbox-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
@@ -319,6 +480,10 @@ export default function AdminDashboardPage() {
                         <textarea name="test1Output" className="admin-input code-font" defaultValue={editingProblem?.tests?.[0]?.output} />
                       </div>
                     </div>
+                    <label className="admin-test-case-visibility">
+                      <input type="checkbox" name="test1Hidden" defaultChecked={editingProblem?.tests?.[0]?.hidden === true} />
+                      Keep test case 1 hidden from users
+                    </label>
                     <div className="admin-test-case-row">
                       <div className="admin-setting-group">
                         <label className="admin-setting-label">Test Case 2 Input</label>
@@ -329,6 +494,11 @@ export default function AdminDashboardPage() {
                         <textarea name="test2Output" className="admin-input code-font" defaultValue={editingProblem?.tests?.[1]?.output} />
                       </div>
                     </div>
+                    <label className="admin-test-case-visibility">
+                      <input type="checkbox" name="test2Hidden" defaultChecked={editingProblem?.tests?.[1]?.hidden === true} />
+                      Keep test case 2 hidden from users
+                    </label>
+                    <p className="admin-test-case-note">Hidden cases are sent to the server only during submission and their input/output is never returned to the user.</p>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '20px', paddingBottom: '10px' }}>
@@ -336,6 +506,157 @@ export default function AdminDashboardPage() {
                     <button type="button" onClick={() => setShowProblemForm(false)} className="admin-button" style={{ flex: 1 }}>Cancel</button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {showRoomForm && (
+            <div className="admin-panel admin-modal-overlay">
+              <div className="admin-modal-card" style={{ width: '500px', maxWidth: '100%' }}>
+                <div className="admin-panel-header">
+                  <div>
+                    <h2>Create Room</h2>
+                    <p className="admin-panel-subtitle">Start a collaboration room for Codefora users.</p>
+                  </div>
+                  <button type="button" onClick={() => setShowRoomForm(false)} className="admin-action-btn" aria-label="Close create room form">✕</button>
+                </div>
+                <form onSubmit={handleCreateRoom} className="admin-settings-form">
+                  <div className="admin-setting-group">
+                    <label className="admin-setting-label" htmlFor="admin-room-name">Room name</label>
+                    <input id="admin-room-name" name="name" className="admin-input" placeholder="e.g. Weekend practice room" required autoFocus />
+                  </div>
+                  <div className="admin-setting-row-flex">
+                    <div className="admin-setting-group" style={{ flex: 1 }}>
+                      <label className="admin-setting-label" htmlFor="admin-room-visibility">Visibility</label>
+                      <select id="admin-room-visibility" name="visibility" className="admin-input" defaultValue="public">
+                        <option value="public">Public</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </div>
+                    <div className="admin-setting-group" style={{ flex: 1 }}>
+                      <label className="admin-setting-label" htmlFor="admin-room-max">Maximum participants</label>
+                      <select id="admin-room-max" name="max" className="admin-input" defaultValue="7">
+                        {[2, 3, 4, 5, 6, 7].map((count) => <option key={count} value={count}>{count}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {roomFormStatus && <p style={{ margin: 0, color: '#ff5555', fontSize: '0.85rem' }}>{roomFormStatus}</p>}
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                    <button type="button" onClick={() => setShowRoomForm(false)} className="admin-button" style={{ flex: 1 }} disabled={creatingRoom}>Cancel</button>
+                    <button type="submit" className="admin-button primary" style={{ flex: 1 }} disabled={creatingRoom}>{creatingRoom ? 'Creating...' : 'Create Room'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Analytics' && (
+            <div className="admin-panel admin-analytics-panel">
+              <div className="admin-panel-header">
+                <div>
+                  <h2>Platform Activity</h2>
+                  <p className="admin-panel-subtitle">A live operational view based on current users, rooms, problems, feedback, and reports.</p>
+                </div>
+                <button className="admin-button" onClick={fetchData}><RefreshCw size={14} /> Refresh</button>
+              </div>
+              <div className="admin-analytics-grid">
+                {analytics.map((item) => (
+                  <div className={`admin-analytics-card ${item.tone}`} key={item.label}>
+                    <div className="admin-analytics-icon">{item.icon}</div>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <small>{item.detail}</small>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-insight-grid">
+                <div>
+                  <span>Verdicts</span>
+                  <strong>{verdictCounts.accepted || 0} accepted / {verdictCounts.wrong_answer || 0} wrong answer</strong>
+                </div>
+                <div>
+                  <span>Runtime errors</span>
+                  <strong>{verdictCounts.runtime_error || 0} runtime / {verdictCounts.compilation_error || 0} compilation</strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Submissions' && (
+            <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
+              <div className="admin-panel-header">
+                <div>
+                  <h2>Submission Monitoring</h2>
+                  <p className="admin-panel-subtitle">Recent judging results across problems and languages.</p>
+                </div>
+                <div className="admin-panel-actions">
+                  <select className="admin-input admin-filter-control" value={submissionFilter} onChange={(event) => setSubmissionFilter(event.target.value)}>
+                    <option value="all">All verdicts</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="wrong_answer">Wrong answer</option>
+                    <option value="time_limit_exceeded">Time limit</option>
+                    <option value="runtime_error">Runtime error</option>
+                    <option value="compilation_error">Compilation error</option>
+                  </select>
+                  <button className="admin-button" onClick={fetchData}><RefreshCw size={14} /> Refresh</button>
+                </div>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Problem</th>
+                      <th>User</th>
+                      <th>Language</th>
+                      <th>Verdict</th>
+                      <th>Passed</th>
+                      <th>Time</th>
+                      <th>Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleSubmissions.map((submission) => {
+                      const problem = problemList.find((item) => item.id === submission.problemId);
+                      const submitter = users.find((item) => item.userId === submission.userId);
+                      return (
+                        <tr key={submission.id}>
+                          <td>{problem?.title || submission.problemId}</td>
+                          <td>{submitter?.name || 'Guest'}</td>
+                          <td>{submission.language || 'Unknown'}</td>
+                          <td><span className={`status-badge verdict-${String(submission.verdict || '').replace(/_/g, '-')}`}>{String(submission.verdict || 'judge_error').replace(/_/g, ' ')}</span></td>
+                          <td>{submission.passed || 0}/{submission.total || 0}</td>
+                          <td>{submission.executionTime || 0}ms</td>
+                          <td>{submission.createdAt ? new Date(submission.createdAt).toLocaleString() : 'Just now'}</td>
+                        </tr>
+                      );
+                    })}
+                    {visibleSubmissions.length === 0 && <tr><td colSpan="7" style={{ textAlign: 'center', padding: '28px' }}>No submissions match this filter.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Activity Logs' && (
+            <div className="admin-panel admin-activity-log-panel">
+              <div className="admin-panel-header">
+                <div>
+                  <h2>Activity Logs</h2>
+                  <p className="admin-panel-subtitle">Persistent record of administrator actions.</p>
+                </div>
+                <button className="admin-button" onClick={fetchData}><RefreshCw size={14} /> Refresh</button>
+              </div>
+              <div className="admin-log-list">
+                {activityLog.map((log, index) => (
+                  <div className="admin-log-item" key={`${log.text}-${index}`}>
+                    <div className={`activity-icon ${log.class}`}>{log.icon}</div>
+                    <div>
+                      <div className="activity-text">{log.text}</div>
+                      <div className="activity-time">{log.time}</div>
+                    </div>
+                  </div>
+                ))}
+                {activityLog.length === 0 && <p className="admin-empty-state">No administrator actions in this session.</p>}
               </div>
             </div>
           )}
@@ -351,7 +672,7 @@ export default function AdminDashboardPage() {
                   <button className="admin-button" onClick={fetchData} style={{ marginRight: '15px' }}>
                     <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
                   </button>
-                  📅 09 May 2026, Friday <br /> 04:36 AM IST
+                  {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' })}
                 </div>
               </div>
 
@@ -376,15 +697,14 @@ export default function AdminDashboardPage() {
           </>
           )}
 
-          {/* Middle Row Panels (Rooms & Problems) */}
-          {(activeTab === 'Dashboard' || activeTab === 'Rooms' || activeTab === 'Problems') && (
-            <div className={activeTab === 'Dashboard' ? "admin-panels-grid" : ""} style={{ display: activeTab === 'Dashboard' ? 'grid' : 'block' }}>
+          {/* Management panels are available only from their dedicated sidebar pages. */}
+          {(activeTab === 'Rooms' || activeTab === 'Problems') && (
+            <div>
               
-              {(activeTab === 'Dashboard' || activeTab === 'Rooms') && (
-                <div className="admin-panel" style={activeTab === 'Rooms' ? { flex: 1, minHeight: '600px' } : {}}>
+              {activeTab === 'Rooms' && (
+                <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
                   <div className="admin-panel-header">
-                    <h2>{activeTab === 'Rooms' ? 'Room Management' : 'Recent Rooms'}</h2>
-                    {activeTab === 'Dashboard' && <button className="admin-link-button" onClick={() => setActiveTab('Rooms')}>View All</button>}
+                    <h2>Room Management</h2>
                   </div>
                   <div className="admin-table-container">
                     <table className="admin-table">
@@ -399,7 +719,7 @@ export default function AdminDashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {rooms.slice(0, activeTab === 'Dashboard' ? 5 : rooms.length).map(room => (
+                        {rooms.map(room => (
                           <tr key={room.id}>
                             <td style={{ color: '#8BE9FD' }}>{room.id}</td>
                             <td>{room.name}</td>
@@ -427,13 +747,12 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {(activeTab === 'Dashboard' || activeTab === 'Problems') && (
-                <div className="admin-panel" style={activeTab === 'Problems' ? { flex: 1, minHeight: '600px' } : {}}>
+              {activeTab === 'Problems' && (
+                <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
                   <div className="admin-panel-header">
-                    <h2>{activeTab === 'Problems' ? 'Problems Management' : 'Problems Overview'}</h2>
+                    <h2>Problems Management</h2>
                     <div style={{ display: 'flex', gap: '10px' }}>
-                      <button className="admin-link-button" onClick={() => { setEditingProblem(null); setShowProblemForm(true); }}>+ Add New</button>
-                      {activeTab === 'Dashboard' && <button className="admin-link-button" onClick={() => setActiveTab('Problems')}>View All</button>}
+                      <button className="admin-link-button" onClick={openProblemForm}>+ Add New</button>
                     </div>
                   </div>
                   <div className="admin-table-container">
@@ -448,7 +767,7 @@ export default function AdminDashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {problemList.slice(0, activeTab === 'Dashboard' ? 5 : problemList.length).map(prob => (
+                        {problemList.map(prob => (
                           <tr key={prob.id}>
                             <td>{prob.title}</td>
                             <td><span className={`status-badge ${prob.difficulty.toLowerCase()}`}>{prob.difficulty}</span></td>
@@ -497,10 +816,19 @@ export default function AdminDashboardPage() {
           {activeTab === 'Feedback' && (
             <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
               <div className="admin-panel-header">
-                <h2>User Feedback & Ratings</h2>
-                <button className="admin-button" onClick={fetchData}>
-                  <RefreshCw size={14} /> Refresh
-                </button>
+                <div>
+                  <h2>User Feedback & Ratings</h2>
+                  <p className="admin-panel-subtitle">Review product feedback and close completed items.</p>
+                </div>
+                <div className="admin-panel-actions">
+                  <select className="admin-input admin-filter-control" value={feedbackFilter} onChange={(event) => setFeedbackFilter(event.target.value)}>
+                    <option value="open">Open</option>
+                    <option value="reviewed">Reviewed</option>
+                    <option value="dismissed">Dismissed</option>
+                    <option value="all">All feedback</option>
+                  </select>
+                  <button className="admin-button" onClick={fetchData}><RefreshCw size={14} /> Refresh</button>
+                </div>
               </div>
               <div className="admin-table-container">
                 <table className="admin-table">
@@ -510,11 +838,13 @@ export default function AdminDashboardPage() {
                       <th>Rating</th>
                       <th>Feedback / Message</th>
                       <th>Type</th>
+                      <th>Status</th>
                       <th>Date</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {feedbackList.map((f) => (
+                    {visibleFeedback.map((f) => (
                       <tr key={f.id}>
                         <td style={{ fontWeight: 600 }}>{f.username}</td>
                         <td>
@@ -532,13 +862,20 @@ export default function AdminDashboardPage() {
                             {f.type.replace('_', ' ')}
                           </span>
                         </td>
+                        <td><span className={`status-badge ${f.status || 'open'}`}>{f.status || 'open'}</span></td>
                         <td style={{ fontSize: '0.75rem', opacity: 0.5 }}>{new Date(f.createdAt).toLocaleDateString()}</td>
+                        <td>
+                          <div className="admin-table-actions">
+                            <button className="admin-action-btn success" title="Mark reviewed" disabled={moderatingId === `${f.id}:reviewed`} onClick={() => handleFeedbackStatus(f, 'reviewed')}><CheckCircle2 size={14} /></button>
+                            <button className="admin-action-btn" title="Dismiss feedback" disabled={moderatingId === `${f.id}:dismissed`} onClick={() => handleFeedbackStatus(f, 'dismissed')}><Eye size={14} /></button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
-                    {feedbackList.length === 0 && (
+                    {visibleFeedback.length === 0 && (
                       <tr>
-                        <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#555' }}>
-                          No feedback received yet.
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: '#555' }}>
+                          No feedback matches this status.
                         </td>
                       </tr>
                     )}
@@ -669,9 +1006,9 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {/* Bottom Row Panels (Users, Reports, Settings) */}
+          {/* Dashboard keeps only the user and report summaries below its metrics. */}
           {(activeTab === 'Dashboard' || activeTab === 'Users' || activeTab === 'Reports' || activeTab === 'Settings') && (
-            <div className={activeTab === 'Dashboard' ? "admin-panels-grid" : ""} style={{ display: activeTab === 'Dashboard' ? 'grid' : 'block', gridTemplateColumns: '1fr 1fr 1fr' }}>
+            <div className={activeTab === 'Dashboard' ? "admin-panels-grid" : ""} style={{ display: activeTab === 'Dashboard' ? 'grid' : 'block', gridTemplateColumns: activeTab === 'Dashboard' ? 'minmax(0, 2fr) minmax(0, 1fr)' : undefined }}>
               
               {(activeTab === 'Dashboard' || activeTab === 'Users') && (
                 <div className="admin-panel" style={activeTab === 'Users' ? { flex: 1, minHeight: '600px' } : {}}>
@@ -698,6 +1035,7 @@ export default function AdminDashboardPage() {
                           <th>Rating</th>
                           <th>Solved</th>
                           <th>Status</th>
+                          <th>Account</th>
                           <th>Actions</th>
                         </tr>
                       </thead>
@@ -734,6 +1072,9 @@ export default function AdminDashboardPage() {
                               <td>{u.solved}</td>
                               <td><span className={`status-badge ${u.status.toLowerCase()}`}>{u.status}</span></td>
                               <td>
+                                <span className={`status-badge ${u.moderationStatus || 'active'}`}>{u.moderationStatus || 'active'}</span>
+                              </td>
+                              <td>
                                 <div className="admin-table-actions">
                                   <button className="admin-action-btn" title="View Profile" onClick={() => window.open(`/profile/${u.friendCode || u.userId}`, '_blank')}><Eye size={12} /></button>
                                   {isSuperAdmin && u.email !== 'ganeshvanamala16@gmail.com' && (
@@ -745,6 +1086,16 @@ export default function AdminDashboardPage() {
                                       <ShieldAlert size={12} />
                                     </button>
                                   )}
+                                  {isSuperAdmin && u.email !== 'ganeshvanamala16@gmail.com' && (
+                                    (u.moderationStatus || 'active') === 'active' ? (
+                                      <>
+                                        <button className="admin-action-btn warning" title="Suspend account" disabled={accountActionId === u.userId} onClick={() => handleAccountStatus(u.userId, 'suspended')}><Timer size={12} /></button>
+                                        <button className="admin-action-btn danger" title="Block account" disabled={accountActionId === u.userId} onClick={() => handleAccountStatus(u.userId, 'blocked')}><Ban size={12} /></button>
+                                      </>
+                                    ) : (
+                                      <button className="admin-action-btn success" title="Restore account" disabled={accountActionId === u.userId} onClick={() => handleAccountStatus(u.userId, 'active')}><UserCheck size={12} /></button>
+                                    )
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -755,7 +1106,7 @@ export default function AdminDashboardPage() {
                               {displayAdmins.length > 0 && (
                                 <>
                                   <tr className="admin-table-section-header">
-                                    <td colSpan="6" style={{ background: 'rgba(255, 255, 255, 0.05)', fontWeight: 'bold', color: 'var(--primary-accent)', padding: '8px 12px' }}>Administrators</td>
+                                    <td colSpan="7" style={{ background: 'rgba(255, 255, 255, 0.05)', fontWeight: 'bold', color: 'var(--primary-accent)', padding: '8px 12px' }}>Administrators</td>
                                   </tr>
                                   {displayAdmins.map(renderUserRow)}
                                 </>
@@ -763,7 +1114,7 @@ export default function AdminDashboardPage() {
                               {displayRegulars.length > 0 && (
                                 <>
                                   <tr className="admin-table-section-header">
-                                    <td colSpan="6" style={{ background: 'rgba(255, 255, 255, 0.02)', fontWeight: 'bold', color: 'rgba(255,255,255,0.6)', padding: '8px 12px' }}>Regular Users</td>
+                                    <td colSpan="7" style={{ background: 'rgba(255, 255, 255, 0.02)', fontWeight: 'bold', color: 'rgba(255,255,255,0.6)', padding: '8px 12px' }}>Regular Users</td>
                                   </tr>
                                   {displayRegulars.map(renderUserRow)}
                                 </>
@@ -791,6 +1142,7 @@ export default function AdminDashboardPage() {
                           <th>Reported User</th>
                           <th>Reported By</th>
                           <th>Reason</th>
+                          <th>Status</th>
                           <th>Time</th>
                           <th>Actions</th>
                         </tr>
@@ -812,12 +1164,13 @@ export default function AdminDashboardPage() {
                               </div>
                             </td>
                             <td title={r.reason}>{r.reason.length > 30 ? r.reason.substring(0, 30) + "..." : r.reason}</td>
+                            <td><span className={`status-badge ${r.status}`}>{r.status}</span></td>
                             <td>{r.time}</td>
                             <td>
                               <div className="admin-table-actions">
-                                <button className="admin-action-btn" title="Ignore"><Eye size={12} /></button>
-                                <button className="admin-action-btn warning" title="Warn"><AlertTriangle size={12} /></button>
-                                <button className="admin-action-btn danger" title="Ban"><ShieldAlert size={12} /></button>
+                                <button className="admin-action-btn success" title="Mark reviewed" disabled={moderatingId === `${r.id}:reviewed`} onClick={() => handleFeedbackStatus(r, 'reviewed')}><CheckCircle2 size={12} /></button>
+                                <button className="admin-action-btn warning" title="Escalate report" disabled={moderatingId === `${r.id}:escalated`} onClick={() => handleFeedbackStatus(r, 'escalated')}><AlertTriangle size={12} /></button>
+                                <button className="admin-action-btn" title="Dismiss report" disabled={moderatingId === `${r.id}:dismissed`} onClick={() => handleFeedbackStatus(r, 'dismissed')}><Eye size={12} /></button>
                               </div>
                             </td>
                           </tr>
@@ -834,8 +1187,8 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {(activeTab === 'Dashboard' || activeTab === 'Settings') && (
-                <div className="admin-panel" style={activeTab === 'Settings' ? { flex: 1, minHeight: '600px' } : {}}>
+              {activeTab === 'Settings' && (
+                <div className="admin-panel" style={{ flex: 1, minHeight: '600px' }}>
                   <div className="admin-panel-header">
                     <h2>System Settings</h2>
                   </div>
@@ -886,31 +1239,6 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* Right Sidebar */}
-        <div className="admin-right-sidebar">
-          <div className="live-activity-panel">
-            <div className="live-activity-header">
-              <h2>Live Activity</h2>
-              <div className="live-indicator">
-                <span className="live-dot"></span> Live
-              </div>
-            </div>
-            
-            <div className="activity-list">
-              {activityLog.map((log, i) => (
-                <div className="activity-item" key={i}>
-                  <div className={`activity-icon ${log.class}`}>
-                    {log.icon}
-                  </div>
-                  <div className="activity-details">
-                    <div className="activity-text" dangerouslySetInnerHTML={{ __html: log.text }} />
-                    <div className="activity-time">{log.time}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -8,6 +8,8 @@ import {
 import { useParams } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { copyToClipboard } from "../lib/clipboard";
+import { signInWithGoogle } from "../lib/firebase";
+import { isGuestUser } from "../lib/userAccess";
 import EmotionPicker from "../components/EmotionPicker";
 import { useAuth } from "../hooks/useAuth";
 import { getProfile, saveProfile } from "../api/client";
@@ -69,10 +71,14 @@ export function ProfilePage() {
   const { user, loading } = useAuth();
   const isOwnProfile = !urlUserId || (user && urlUserId === user.uid);
   const targetUserId = urlUserId || user?.uid;
+  const shouldPromptGoogleSignIn = !loading && isOwnProfile && isGuestUser(user);
+  const [googleSignInBusy, setGoogleSignInBusy] = useState(false);
+  const [googleSignInError, setGoogleSignInError] = useState("");
   
   // Real Profile Data
   const [profileData, setProfileData] = useState({});
   const [myFriends, setMyFriends] = useState([]);
+  const [friendProfiles, setFriendProfiles] = useState({});
   const [toastMsg, setToastMsg] = useState("");
   const [copyFeedback, setCopyFeedback] = useState("");
   const copyFeedbackTimerRef = useRef(null);
@@ -122,7 +128,7 @@ export function ProfilePage() {
   }, []);
 
   useEffect(() => {
-    if (!targetUserId) {
+    if (!targetUserId || shouldPromptGoogleSignIn) {
       setLoadingProfile(false);
       return;
     }
@@ -145,7 +151,24 @@ export function ProfilePage() {
     trackEvent("profile_visit", { user_id: targetUserId });
     loadProfile();
     return () => { active = false; };
-  }, [targetUserId, isOwnProfile, user?.displayName]);
+  }, [targetUserId, isOwnProfile, shouldPromptGoogleSignIn, user?.displayName]);
+
+  const continueWithGoogle = async () => {
+    setGoogleSignInBusy(true);
+    setGoogleSignInError("");
+    try {
+      const result = await signInWithGoogle();
+      const account = result?.user;
+      if (account?.uid) {
+        localStorage.setItem("codefora_user_id", account.uid);
+        localStorage.setItem("codefora_username", account.displayName || account.email?.split("@")[0] || "Developer");
+      }
+    } catch (error) {
+      setGoogleSignInError("Google sign-in did not complete. Please try again.");
+    } finally {
+      setGoogleSignInBusy(false);
+    }
+  };
 
   const headerName = useMemo(() => displayName || (isOwnProfile ? user?.displayName : "Unknown Developer"), [displayName, isOwnProfile, user?.displayName]);
   const emotionImage = selectedEmotion ? `${API_URL}/api/emotions/${selectedEmotion}/image` : null;
@@ -164,7 +187,35 @@ export function ProfilePage() {
     const myFriendIds = new Set(myFriends.map(f => f.id));
     return rawFriends.filter(f => myFriendIds.has(f.id));
   }, [isOwnProfile, user, rawFriends, myFriends]);
+  const friendEntries = useMemo(() => friends.map((friend) => ({
+    ...friend,
+    ...(friendProfiles[friend.id] || {}),
+    friendCode: friendProfiles[friend.id]?.friendCode || friend.friendCode || ""
+  })), [friends, friendProfiles]);
   const activities = profileData.activities || [];
+
+  useEffect(() => {
+    let active = true;
+
+    if (friends.length === 0) {
+      setFriendProfiles((current) => Object.keys(current).length === 0 ? current : {});
+      return () => { active = false; };
+    }
+
+    async function loadFriendProfiles() {
+      const entries = await Promise.all(friends.map(async (friend) => {
+        const profile = await getProfile(friend.id).catch(() => null);
+        return profile?.id ? [friend.id, profile] : null;
+      }));
+
+      if (active) {
+        setFriendProfiles(Object.fromEntries(entries.filter(Boolean)));
+      }
+    }
+
+    loadFriendProfiles();
+    return () => { active = false; };
+  }, [friends]);
 
   const openEditModal = () => {
     setEditName(displayName);
@@ -316,6 +367,32 @@ export function ProfilePage() {
         <div style={{ textAlign: 'center', marginTop: '100px' }}>
           <h2>Authentication Required</h2>
           <button onClick={() => navigate("/home")} className="btn-primary" style={{ margin: '0 auto' }}>Go to Home</button>
+        </div>
+      </main>
+    );
+  }
+
+  if (shouldPromptGoogleSignIn) {
+    return (
+      <main className="profile-dashboard">
+        <Navbar />
+        <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="google-profile-title">
+          <section className="profile-modal-card profile-google-signin-card">
+            <div className="profile-modal-header">
+              <h3 id="google-profile-title">Continue with Google</h3>
+              <button type="button" className="profile-modal-close" onClick={() => navigate("/home")} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="profile-google-signin-copy">Sign in with Google to create and save your Codefora profile, USER ID, activity, and progress.</p>
+            {googleSignInError && <p className="profile-google-signin-error">{googleSignInError}</p>}
+            <div className="profile-modal-footer">
+              <button type="button" className="btn-secondary" onClick={() => navigate("/home")} disabled={googleSignInBusy}>Not now</button>
+              <button type="button" className="btn-primary" onClick={continueWithGoogle} disabled={googleSignInBusy}>
+                {googleSignInBusy ? "Opening Google..." : "Continue with Google"}
+              </button>
+            </div>
+          </section>
         </div>
       </main>
     );
@@ -701,19 +778,19 @@ export function ProfilePage() {
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {friends.filter(f => !friendSearchQuery || (f.id && f.id.toString().includes(friendSearchQuery))).map((friend, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <img src={defaultAvatar} alt={friend.name} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
+              {friendEntries.filter(friend => !friendSearchQuery || [friend.displayName || friend.name, friend.friendCode].some(value => String(value || "").toLowerCase().includes(friendSearchQuery.toLowerCase()))).map((friend) => (
+                <div key={friend.id} style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <img src={friend.photoURL || defaultAvatar} alt={friend.displayName || friend.name} style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: '15px' }}>{friend.name}</div>
-                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>ID: {friend.id || 'Unknown'}</div>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>{friend.displayName || friend.name}</div>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>USER ID: {friend.friendCode || 'Generating...'}</div>
                   </div>
                   <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
                     Message
                   </button>
                 </div>
               ))}
-              {friends.filter(f => !friendSearchQuery || (f.id && f.id.toString().includes(friendSearchQuery))).length === 0 && (
+              {friendEntries.filter(friend => !friendSearchQuery || [friend.displayName || friend.name, friend.friendCode].some(value => String(value || "").toLowerCase().includes(friendSearchQuery.toLowerCase()))).length === 0 && (
                 <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', padding: '40px 0', fontSize: '14px' }}>
                   No friends found.
                 </div>

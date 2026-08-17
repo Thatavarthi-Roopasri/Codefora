@@ -7,6 +7,7 @@ import { logoutUser } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { getProfile, api } from "../api/client";
 import { copyToClipboard } from "../lib/clipboard";
+import { isGuestUser } from "../lib/userAccess";
 import { API_URL } from "../config";
 import defaultAvatar from "../../assets/scene1.jpeg";
 
@@ -297,7 +298,7 @@ export function Navbar() {
         setDisplayName("");
       }
 
-      if (user?.uid) {
+      if (user?.uid && !isGuestUser(user)) {
         try {
           const profile = await getProfile(user.uid);
           if (profile?.emotionId) {
@@ -320,6 +321,8 @@ export function Navbar() {
         }
       } else {
         setEmotionId(null);
+        setFriends([]);
+        setFriendCode("");
       }
     };
     updateName();

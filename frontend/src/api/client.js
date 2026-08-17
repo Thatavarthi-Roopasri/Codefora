@@ -7,7 +7,7 @@ async function request(path, options) {
     ...(options?.headers || {}) 
   };
   
-  if (auth.currentUser) {
+  if (auth?.currentUser) {
     try {
       const idToken = await auth.currentUser.getIdToken(false);
       headers["Authorization"] = `Bearer ${idToken}`;
@@ -39,9 +39,11 @@ export const api = {
   getRoomByInviteCode: (code) => request(`/api/rooms/invite/${encodeURIComponent(code)}`),
   createRoom: (body) => request("/api/rooms", { method: "POST", body: JSON.stringify(body) }),
   runCode: (body) => request("/api/compiler/run", { method: "POST", body: JSON.stringify(body) }),
+  submitProblem: (body) => request("/api/compiler/submit", { method: "POST", body: JSON.stringify(body) }),
   askAi: (body) => request("/api/ai", { method: "POST", body: JSON.stringify(body) }),
   login: (body) => request("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
   signup: (body) => request("/api/auth/signup", { method: "POST", body: JSON.stringify(body) }),
+  bootstrapProfile: () => request("/api/profiles/bootstrap", { method: "POST" }),
   getProfile: (userId) => request(`/api/profiles/${encodeURIComponent(userId)}`),
   searchProfile: (query) => request(`/api/profiles/search/${encodeURIComponent(query)}`),
   saveProfile: (userId, profile) => request(`/api/profiles/${encodeURIComponent(userId)}`, { method: "POST", body: JSON.stringify(profile) }),

@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { ArrowLeft, Bot, BookOpen, CheckCircle, Loader2, MessageCircle, MessageSquare, Play, Search, Send, Sparkles, Users, X, XCircle, Plus, Lock, Zap, Filter, List, LayoutGrid, Bookmark, Star, ChevronRight, ChevronLeft, ChevronDown, Hash, Code, User, Clock, Brain, AlertCircle, Maximize2, PlayCircle } from "lucide-react";
+import { ArrowLeft, Bot, BookOpen, CheckCircle, Loader2, MessageCircle, MessageSquare, Play, Search, Send, Sparkles, Users, X, XCircle, Plus, Lock, Zap, List, LayoutGrid, Bookmark, Star, ChevronRight, ChevronLeft, ChevronDown, Hash, Code, User, Clock, Brain, AlertCircle, Maximize2, PlayCircle } from "lucide-react";
 import { dryRunComponents } from "../dryruns";
 import { PROBLEMS_DRYRUNS } from "../data/problemsDryRun";
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +10,7 @@ import { Navbar } from "../components/Navbar";
 import { trackEvent } from "../lib/analytics";
 import { saveUsername, saveHostToken, saveInviteCode } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
+import { isGuestUser } from "../lib/userAccess";
 import "../styles/problems-v2.css";
 
 const allTags = ["Arrays", "Graphs", "DP", "Trees", "Strings", "Patterns", "Greedy", "Binary Search", "Math"];
@@ -132,7 +133,7 @@ export function ProblemsPage() {
     }
     
     async function loadProfileStats() {
-      if (!user?.uid) return;
+      if (!user?.uid || isGuestUser(user)) return;
       try {
         const profile = await api.getProfile(user.uid);
         if (profile?.solvedProblems) {
@@ -178,52 +179,38 @@ export function ProblemsPage() {
     );
   }
 
-  async function runAgainstTests(testCases) {
-    const promises = testCases.map(async (testCase) => {
-      try {
-        const result = await api.runCode({
-          language: runLanguage,
-          version: undefined,
-          code,
-          input: testCase.input
-        });
-        const actual = normalizeOutput(result.stdout || result.executionOutput || result.output);
-        const expected = normalizeOutput(testCase.output);
-        return {
-          input: testCase.input,
-          expected,
-          actual,
-          passed: actual === expected,
-          raw: result
-        };
-      } catch (err) {
-        return {
-          input: testCase.input,
-          expected: normalizeOutput(testCase.output),
-          actual: `Error: ${err.message}`,
-          passed: false,
-          raw: { error: err.message }
-        };
-      }
-    });
-    return Promise.all(promises);
-  }
-
   async function handleCompile() {
     if (!selectedProblem) return;
+    const sample = selectedProblem.tests?.[0];
+    if (!sample) {
+      setJudgeStatus("wrong");
+      setRunOutput("No visible sample test is available for this problem.");
+      return;
+    }
+
     setIsRunning(true);
     setJudgeStatus("running");
     setFailedTestCase(null);
     setRunOutput("Compiling and running sample test case 1...");
-    trackEvent("code_run", { problem_id: selectedProblem.id, language: runLanguage });
+    trackEvent("code_run", { problem_id: selectedProblem.id, language });
     try {
-      const [result] = await runAgainstTests([selectedProblem.tests[0]]);
-      setJudgeStatus(result.passed ? "accepted" : "wrong");
-      if (result.passed) {
+      const result = await api.runCode({ language, code, input: sample.input });
+      const actual = normalizeOutput(result.stdout || result.executionOutput || result.output);
+      const expected = normalizeOutput(sample.output);
+      const passed = result.status === "success" && actual === expected;
+
+      setJudgeStatus(passed ? "accepted" : "wrong");
+      if (passed) {
         setRunOutput("Sample test case 1 passed successfully.");
       } else {
-        setRunOutput("Wrong Answer on sample test case 1.");
-        setFailedTestCase(result);
+        const label = result.judgeStatus || (result.status === "success" ? "Wrong Answer" : "Runtime Error");
+        setRunOutput(`${label} on sample test case 1.`);
+        setFailedTestCase({
+          input: sample.input,
+          expected: sample.output,
+          actual: result.stdout || "",
+          error: result.stderr || ""
+        });
       }
     } catch (error) {
       setJudgeStatus("wrong");
@@ -238,29 +225,29 @@ export function ProblemsPage() {
     setIsRunning(true);
     setJudgeStatus("running");
     setFailedTestCase(null);
-    setRunOutput("Submitting against all 15 test cases (3 sample + 12 hidden)...");
-    trackEvent("submission", { problem_id: selectedProblem.id, language: runLanguage });
+    const testSummary = selectedProblem.testSummary;
+    const total = testSummary?.total || selectedProblem.tests?.length || 0;
+    const hidden = testSummary?.hidden || 0;
+    setRunOutput(`Submitting against ${total} test cases${hidden ? ` (${hidden} hidden)` : ""}...`);
+    trackEvent("submission", { problem_id: selectedProblem.id, language });
     try {
-      const results = await runAgainstTests(selectedProblem.tests);
-      const passedCount = results.filter(r => r.passed).length;
-      const totalCount = results.length;
-      const firstFailed = results.find(r => !r.passed);
+      const result = await api.submitProblem({
+        problemId: selectedProblem.id,
+        language,
+        code,
+        userId: user?.uid || null
+      });
+      const accepted = result.verdict === "accepted";
+      setJudgeStatus(accepted ? "accepted" : "wrong");
+      setFailedTestCase(result.failedTestCase || null);
+      setRunOutput(`${result.label}. ${result.passed}/${result.total} test cases passed.${result.executionTime ? ` ${result.executionTime}ms total execution time.` : ""}${result.message ? ` ${result.message}` : ""}`);
 
-      if (passedCount === totalCount) {
-        setJudgeStatus("accepted");
-        setRunOutput(`Accepted! All ${totalCount}/${totalCount} test cases passed.`);
+      if (accepted) {
         if (user?.uid && !solvedProblems.includes(selectedProblem.id)) {
           api.solveProblem(user.uid, selectedProblem.id).then(() => {
             setSolvedProblems(prev => [...prev, selectedProblem.id]);
           }).catch(console.warn);
         }
-      } else {
-        setJudgeStatus("wrong");
-        setFailedTestCase(firstFailed);
-
-        const failedIndex = results.indexOf(firstFailed);
-        
-        setRunOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed. (Test case ${failedIndex + 1} failed).`);
       }
     } catch (error) {
       setJudgeStatus("wrong");
@@ -398,9 +385,6 @@ export function ProblemsPage() {
                 ))}
               </div>
               <div className="problems-v2-view-toggles">
-                <button className="problems-v2-btn-secondary">
-                  <Filter size={14} /> Filter
-                </button>
                 <button className={`problems-v2-icon-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}>
                   <List size={16} />
                 </button>
@@ -723,7 +707,12 @@ export function ProblemsPage() {
 
             <section>
               <h2>Sample Test Cases</h2>
-              {selectedProblem.tests.slice(0, 4).map((test, index) => (
+              {selectedProblem.testSummary?.hidden > 0 && (
+                <p className="problem-test-summary">
+                  {selectedProblem.testSummary.visible} visible samples and {selectedProblem.testSummary.hidden} hidden test cases are used for submission.
+                </p>
+              )}
+              {selectedProblem.tests.map((test, index) => (
                 <article className="sample-case" key={`${selectedProblem.id}-${index}`}>
                   <h3>Sample {index + 1}</h3>
                   <div>

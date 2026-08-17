@@ -1,7 +1,7 @@
 const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_REQUESTS = 150;
 
-export function createCompilerController(pistonService, options = {}) {
+export function createCompilerController(pistonService, problemJudgeService, submissionService, options = {}) {
   const windowMs = Number(options.windowMs || DEFAULT_WINDOW_MS);
   const maxRequests = Number(options.maxRequests || DEFAULT_MAX_REQUESTS);
   const buckets = new Map();
@@ -54,7 +54,7 @@ export function createCompilerController(pistonService, options = {}) {
 
       response.json(result);
     } catch (error) {
-      const statusCode = error?.statusCode || (error?.code === "INVALID_LANGUAGE" ? 400 : 500);
+      const statusCode = error?.statusCode || error?.status || (error?.code === "INVALID_LANGUAGE" ? 400 : 500);
       response.status(statusCode).json({
         error: error?.message || "Compiler execution failed",
         code: error?.code || "COMPILER_ERROR",
@@ -64,5 +64,36 @@ export function createCompilerController(pistonService, options = {}) {
     }
   }
 
-  return { rateLimit, run };
+  async function submit(request, response) {
+    try {
+      const body = request.body || {};
+      if (!body.problemId) return response.status(400).json({ error: "problemId is required", status: "invalid_request" });
+      if (!body.language || !String(body.language).trim()) return response.status(400).json({ error: "language is required", status: "invalid_request" });
+      if (body.code == null || String(body.code).trim() === "") return response.status(400).json({ error: "code is required", status: "invalid_request" });
+
+      const result = await problemJudgeService.judge({
+        problemId: body.problemId,
+        language: body.language,
+        code: body.code
+      });
+
+      if (submissionService) {
+        submissionService.record({
+          userId: body.userId,
+          problemId: body.problemId,
+          language: body.language,
+          ...result
+        }).catch((recordError) => console.warn("Submission record failed:", recordError.message));
+      }
+
+      response.json(result);
+    } catch (error) {
+      response.status(error?.status || 500).json({
+        error: error?.message || "Submission could not be judged.",
+        status: "error"
+      });
+    }
+  }
+
+  return { rateLimit, run, submit };
 }

@@ -17,7 +17,7 @@ const LANGUAGE_MAP = {
 };
 
 export class PistonService {
-  async run({ language, code, input }) {
+  async run({ language, code, input, timeLimitMs }) {
     const sourceCode = String(code ?? "").trim();
     const stdin = String(input ?? "");
     const langId = LANGUAGE_MAP[language.toLowerCase()] || 63; // Default to JS
@@ -26,16 +26,25 @@ export class PistonService {
       throw createCompilerError("EMPTY_CODE", "Code cannot be empty.", 400);
     }
 
+    const requestTimeoutMs = Math.max(10_000, Number(timeLimitMs || 0) + 5_000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+
     try {
       console.log(`[Compiler] Sending to Judge0 (ID: ${langId})...`);
 
       const response = await fetch(JUDGE0_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           source_code: Buffer.from(sourceCode).toString('base64'),
           language_id: langId,
-          stdin: Buffer.from(stdin).toString('base64')
+          stdin: Buffer.from(stdin).toString('base64'),
+          ...(timeLimitMs ? {
+            cpu_time_limit: Math.max(0.25, Number(timeLimitMs) / 1000),
+            wall_time_limit: Math.max(1, Number(timeLimitMs) / 1000 + 0.5)
+          } : {})
         })
       });
 
@@ -49,16 +58,24 @@ export class PistonService {
       const stderrDecoded = result.stderr ? Buffer.from(result.stderr, 'base64').toString('utf8') : 
                             (result.compile_output ? Buffer.from(result.compile_output, 'base64').toString('utf8') : "");
 
+      const judgeStatus = result.status?.description || "Unknown status";
+      const accepted = judgeStatus.toLowerCase() === "accepted";
       return {
         stdout: stdoutDecoded,
         stderr: stderrDecoded,
         output: stdoutDecoded + stderrDecoded,
         executionTime: Math.floor(parseFloat(result.time || 0) * 1000),
-        status: result.status?.description?.toLowerCase()?.includes("accepted") ? "success" : "error"
+        status: accepted ? "success" : "error",
+        judgeStatus
       };
     } catch (error) {
+      if (error?.name === "AbortError") {
+        throw createCompilerError("TIMEOUT", "Execution exceeded the allowed time.", 408);
+      }
       console.error("[Compiler] Judge0 Error:", error.message);
       throw createCompilerError("COMPILER_UNAVAILABLE", `Network issue, please improve your internet. (${error.message})`, 503);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

@@ -4,6 +4,7 @@ import { getInviteCode } from "../../lib/navigation";
 import { API_URL } from "../../config";
 import { useAuth } from "../../hooks/useAuth";
 import { getProfile } from "../../api/client";
+import { isGuestUser } from "../../lib/userAccess";
 
 export function UsersPanel({ 
   room, 
@@ -28,7 +29,7 @@ export function UsersPanel({
   const [invitingFriendId, setInvitingFriendId] = useState(null);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || isGuestUser(currentUser)) return;
     let active = true;
     const fetchFriends = async () => {
       try {

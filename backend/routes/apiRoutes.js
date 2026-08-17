@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { createCompilerRoutes } from "./compiler.js";
 import { adminAuth } from "../middleware/adminAuth.js";
+import { firebaseAuth } from "../middleware/firebaseAuth.js";
 import rateLimit from "express-rate-limit";
 import { generateChallenge, submitChallenge } from "../controllers/challengeController.js";
 
@@ -33,6 +34,7 @@ export function createApiRoutes({ roomController, executionController, aiControl
   router.get("/problems/:id", problemController.get);
   // Profile routes
   if (profileController) {
+    router.post("/profiles/bootstrap", firebaseAuth, profileController.bootstrap);
     router.get("/profiles/search/:query", profileController.searchUser);
     router.get("/profiles/:userId", profileController.get);
     router.post("/profiles/:userId", profileController.save);
@@ -72,6 +74,7 @@ export function createApiRoutes({ roomController, executionController, aiControl
   // Feedback routes
   router.post("/feedback", feedbackController.submit);
   router.get("/admin/feedback", adminAuth, feedbackController.getAll);
+  router.patch("/admin/feedback/:id/status", adminAuth, feedbackController.updateStatus);
 
   // Admin routes (Protected)
   if (adminController) {
@@ -82,6 +85,9 @@ export function createApiRoutes({ roomController, executionController, aiControl
     router.get("/admin/rooms", adminAuth, adminController.getRooms);
     router.get("/admin/users", adminAuth, adminController.getUsers);
     router.post("/admin/users/:id/role", adminAuth, adminController.updateUserRole);
+    router.patch("/admin/users/:id/account-status", adminAuth, adminController.updateUserAccountStatus);
+    router.get("/admin/submissions", adminAuth, adminController.getSubmissions);
+    router.get("/admin/audit-log", adminAuth, adminController.getAuditLog);
     router.get("/admin/problems", adminAuth, adminController.getProblems);
     router.delete("/admin/rooms/:id", adminAuth, adminController.deleteRoom);
     router.post("/admin/rooms/:id/lock", adminAuth, adminController.toggleRoomLock);

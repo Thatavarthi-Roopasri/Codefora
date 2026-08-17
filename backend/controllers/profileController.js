@@ -58,13 +58,112 @@ export async function getNextFriendCode(db, userId) {
   });
 }
 
+function createDefaultProfile(identity = {}) {
+  return {
+    displayName: identity.displayName || identity.email?.split("@")[0] || "Developer",
+    bio: "",
+    theme: "dark",
+    community: "sider",
+    friends: [],
+    activities: [],
+    stats: {},
+    photoURL: identity.photoURL || ""
+  };
+}
+
+export async function ensureProfileRecord(db, userId, identity = {}) {
+  const now = Date.now();
+
+  if (!db || db.isMock) {
+    const users = await readLocalUsers();
+    const existing = users[userId] || {};
+    const existingProfile = existing.profile || {};
+    const friendCode = existingProfile.friendCode || await getNextFriendCode(db, userId);
+    const profile = {
+      ...createDefaultProfile(identity),
+      ...existingProfile,
+      friendCode,
+      displayName: existingProfile.displayName || identity.displayName || identity.email?.split("@")[0] || "Developer",
+      photoURL: existingProfile.photoURL || identity.photoURL || ""
+    };
+
+    users[userId] = {
+      ...existing,
+      profile,
+      email: existing.email || identity.email || "",
+      authProvider: existing.authProvider || identity.providerId || "",
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: now
+    };
+    await writeLocalUsers(users);
+    return profile;
+  }
+
+  const userRef = db.collection("users").doc(userId);
+  const counterRef = db.collection("counters").doc("users");
+
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(userRef);
+    const existing = snapshot.exists ? snapshot.data() : {};
+    const existingProfile = existing.profile || {};
+    let friendCode = existingProfile.friendCode;
+
+    if (!friendCode) {
+      const counter = await transaction.get(counterRef);
+      const nextCode = counter.exists && counter.data().nextFriendCode
+        ? counter.data().nextFriendCode
+        : 13219873;
+      friendCode = String(nextCode);
+      transaction.set(counterRef, { nextFriendCode: nextCode - 1 }, { merge: true });
+    }
+
+    const profile = {
+      ...createDefaultProfile(identity),
+      ...existingProfile,
+      friendCode,
+      displayName: existingProfile.displayName || identity.displayName || identity.email?.split("@")[0] || "Developer",
+      photoURL: existingProfile.photoURL || identity.photoURL || ""
+    };
+
+    transaction.set(userRef, {
+      profile,
+      email: existing.email || identity.email || "",
+      authProvider: existing.authProvider || identity.providerId || "",
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: now
+    }, { merge: true });
+    transaction.set(db.collection("friendCodes").doc(friendCode), { uid: userId }, { merge: true });
+
+    return profile;
+  });
+}
+
 export function createProfileController() {
   const db = createFirestore();
 
   return {
+    bootstrap: async (request, response) => {
+      try {
+        const firebaseUser = request.firebaseUser;
+        const profile = await ensureProfileRecord(db, firebaseUser.uid, {
+          displayName: firebaseUser.name,
+          email: firebaseUser.email,
+          photoURL: firebaseUser.picture,
+          providerId: firebaseUser.firebase?.sign_in_provider || "firebase"
+        });
+        return response.json({ ...profile, id: firebaseUser.uid });
+      } catch (error) {
+        console.warn(`Profile bootstrap failed: ${error.message}`);
+        return response.status(500).json({ error: "Could not prepare your profile." });
+      }
+    },
+
     get: async (request, response) => {
       const userId = String(request.params.userId || "").trim();
       if (!userId) return response.status(400).json({ error: "Missing userId" });
+      if (userId.startsWith("guest-")) return response.json({});
 
       try {
         const isNumericCode = /^\d{8}$/.test(userId);
@@ -172,6 +271,7 @@ export function createProfileController() {
       }
       
       if (!userId) return response.status(400).json({ error: "Missing userId" });
+      if (userId.startsWith("guest-")) return response.status(403).json({ error: "Continue with Google to save a profile." });
       try {
         if (!db || db.isMock) {
           const users = await readLocalUsers();
