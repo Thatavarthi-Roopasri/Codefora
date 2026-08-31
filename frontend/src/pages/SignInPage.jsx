@@ -1,15 +1,19 @@
-import { useNavigate, NavLink } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { logoutUser, signInWithGoogle, auth } from "../lib/firebase";
+import { logoutUser, signInWithGoogle, auth, isFirebaseConfigured } from "../lib/firebase";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, updateProfile, signOut } from "firebase/auth";
 import { saveUsername } from "../lib/navigation";
-import { api } from "../api/client";
-import { BrandButton } from "../components/BrandButton";
-import homevideo from "../../assets/homevideo.mp4";
+
+
+import { DeferredBackgroundVideo } from "../components/DeferredBackgroundVideo";
 import { useAuth } from "../hooks/useAuth";
+import { saveCodeforaSession } from "../lib/session";
+
+const loadHomeVideo = () => import("../../assets/homevideo.mp4");
 
 export default function SignInPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading } = useAuth();
   
   const [authOpen, setAuthOpen] = useState(false);
@@ -18,13 +22,26 @@ export default function SignInPage() {
   const [authStatus, setAuthStatus] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [showResend, setShowResend] = useState(false);
+  const firebaseUnavailableMessage = "Login is unavailable because Firebase client config is missing. Add the VITE_FIREBASE_* values, then restart the app. For local testing, use Continue as Guest.";
+  const authUnavailable = !isFirebaseConfigured || !auth;
+
+  const returnTo = typeof location.state?.returnTo === "string" && location.state.returnTo.startsWith("/")
+    ? location.state.returnTo
+    : "";
+
+  function getPostLoginPath(accountOrRole) {
+    const email = typeof accountOrRole === "string" ? "" : accountOrRole?.email;
+    const role = typeof accountOrRole === "string" ? accountOrRole : "";
+    const isAdmin = role === "admin" || ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(email);
+    return returnTo || (isAdmin ? "/admin" : "/home");
+  }
 
   useEffect(() => {
     if (!loading && user) {
       const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user.email);
-      navigate(isAdmin ? '/admin' : '/home', { replace: true });
+      navigate(returnTo || (isAdmin ? '/admin' : '/home'), { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, returnTo]);
 
   async function handleGoogleSignIn() {
     try {
@@ -35,18 +52,11 @@ export default function SignInPage() {
       
       const displayName = account?.displayName || account?.email?.split("@")[0] || "Developer";
       saveUsername(displayName);
-      if (account?.uid) localStorage.setItem("codefora_user_id", account.uid);
-      if (role === "admin") {
-        localStorage.setItem("codefora_role", "admin");
-
-        navigate('/admin');
-      } else {
-        localStorage.setItem("codefora_role", "user");
-        navigate('/home');
-      }
+      saveCodeforaSession({ uid: account?.uid, displayName, role });
+      navigate(getPostLoginPath(role));
     } catch (err) {
       console.error('Google sign-in failed:', err);
-      setAuthStatus("Google sign-in failed. Please try again.");
+      setAuthStatus(authUnavailable ? firebaseUnavailableMessage : "Google sign-in failed. Please try again.");
     }
   }
 
@@ -61,7 +71,7 @@ export default function SignInPage() {
     document.documentElement.dataset.community = "sider";
     const guestId = `guest-${Date.now()}`;
     saveUsername("Guest");
-    localStorage.setItem("codefora_user_id", guestId);
+    saveCodeforaSession({ uid: guestId, displayName: "Guest", community: "sider", role: "user" });
     navigate('/home');
   }
 
@@ -72,26 +82,25 @@ export default function SignInPage() {
   }
 
   function finishManualAuth(account) {
-    saveUsername(account.displayName || account.username);
-    localStorage.setItem("codefora_user_id", account.userId);
+    const displayName = account.displayName || account.username;
+    saveUsername(displayName);
     
     const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(account.email);
-    if (isAdmin) {
-      localStorage.setItem("codefora_role", "admin");
-
-    } else {
-      localStorage.setItem("codefora_role", "user");
-    }
+    saveCodeforaSession({ uid: account.userId, displayName, role: isAdmin ? "admin" : "user" });
 
     setAuthForm({ username: "", email: "", password: "", confirmPassword: "" });
     setAuthStatus("");
     setShowResend(false);
 
-    if (isAdmin) navigate('/admin');
-    else navigate('/home');
+    navigate(getPostLoginPath(account));
   }
 
   async function handleForgotPassword() {
+    if (authUnavailable) {
+      setAuthStatus(firebaseUnavailableMessage);
+      return;
+    }
+
     if (!authForm.email) {
       setAuthStatus("Please enter your email to reset password.");
       return;
@@ -110,6 +119,11 @@ export default function SignInPage() {
   }
 
   async function handleResendVerification() {
+    if (authUnavailable) {
+      setAuthStatus(firebaseUnavailableMessage);
+      return;
+    }
+
     if (!authForm.email || !authForm.password) {
       setAuthStatus("Please enter your email and password to resend the verification link.");
       return;
@@ -138,6 +152,11 @@ export default function SignInPage() {
   async function handleManualAuth(event) {
     event.preventDefault();
     if (authBusy) return;
+
+    if (authUnavailable) {
+      setAuthStatus(firebaseUnavailableMessage);
+      return;
+    }
 
     if (authTab === "signup" && authForm.password !== authForm.confirmPassword) {
       setAuthStatus("Passwords do not match.");
@@ -185,11 +204,8 @@ export default function SignInPage() {
 
   return (
     <main style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', width: '100%', background: '#000' }}>
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
+      <DeferredBackgroundVideo
+        sourceLoader={loadHomeVideo}
         style={{
           position: 'absolute',
           top: 0,
@@ -200,9 +216,7 @@ export default function SignInPage() {
           zIndex: 0,
           opacity: 1
         }}
-      >
-        <source src={homevideo} type="video/mp4" />
-      </video>
+      />
 
       <div className="home-main-layout animate-fade-in-up" style={{ position: 'relative', zIndex: 2 }}>
         {/* HERO SECTION */}
@@ -351,6 +365,12 @@ export default function SignInPage() {
                 {authTab === "signup" ? "Create Account" : "Welcome Back"}
               </h2>
 
+              {authUnavailable && (
+                <div className="auth-modal-status" style={{ color: '#fbbf24', textAlign: 'left', marginBottom: '18px', padding: '12px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '8px', border: '1px solid rgba(251, 191, 36, 0.25)', lineHeight: 1.5 }}>
+                  {firebaseUnavailableMessage}
+                </div>
+              )}
+
               <div className="auth-modal-fields" style={{ gap: '15px' }}>
                 {authTab === "signup" && (
                   <input
@@ -360,6 +380,7 @@ export default function SignInPage() {
                     placeholder="Username"
                     className="glass-panel"
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                    disabled={authUnavailable}
                     required
                   />
                 )}
@@ -370,6 +391,7 @@ export default function SignInPage() {
                   placeholder="Email Address"
                   className="glass-panel"
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                  disabled={authUnavailable}
                   required
                 />
                 <input
@@ -379,6 +401,7 @@ export default function SignInPage() {
                   placeholder="Password"
                   className="glass-panel"
                   style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                  disabled={authUnavailable}
                   required
                 />
                 {authTab === "signup" && (
@@ -389,6 +412,7 @@ export default function SignInPage() {
                     placeholder="Confirm Password"
                     className="glass-panel"
                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }}
+                    disabled={authUnavailable}
                     required
                   />
                 )}
@@ -412,13 +436,13 @@ export default function SignInPage() {
                 </div>
               )}
 
-              <button className="btn-modern primary" type="submit" disabled={authBusy} style={{ width: '100%', marginTop: '30px', justifyContent: 'center' }}>
+              <button className="btn-modern primary" type="submit" disabled={authBusy || authUnavailable} style={{ width: '100%', marginTop: '30px', justifyContent: 'center', opacity: authUnavailable ? 0.55 : 1 }}>
                 {authBusy ? "Processing..." : authTab === "signup" ? "Create Account" : "Sign In"}
               </button>
 
               <div className="auth-divider" style={{ margin: '25px 0', opacity: 0.5 }}>or continue with</div>
 
-              <button className="btn-modern secondary" type="button" onClick={handleGoogleSignIn} style={{ width: '100%', justifyContent: 'center' }}>
+              <button className="btn-modern secondary" type="button" onClick={handleGoogleSignIn} disabled={authUnavailable} style={{ width: '100%', justifyContent: 'center', opacity: authUnavailable ? 0.55 : 1 }}>
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" style={{ width: '20px' }} />
                 Google
               </button>

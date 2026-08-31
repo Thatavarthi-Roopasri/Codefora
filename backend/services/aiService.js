@@ -75,7 +75,7 @@ async function askCodeforaAI(userMessage, context = {}, code = "", file = "", la
     : userMessage;
 
   // 1. Fetch raw facts from LoRA
-  let rawLoraText = "";
+  let rawLoraText;
   try {
     const response = await fetch(
       "https://roopasri06-codefora-lora-api.hf.space/generate",

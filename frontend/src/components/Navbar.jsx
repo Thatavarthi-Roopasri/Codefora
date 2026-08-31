@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { UserCircle2, LogOut, User, Bell, Users, MessageCircle, UserMinus, Copy } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -8,10 +8,12 @@ import { useAuth } from "../hooks/useAuth";
 import { getProfile, api } from "../api/client";
 import { copyToClipboard } from "../lib/clipboard";
 import { isGuestUser } from "../lib/userAccess";
+import { subscribeProfileSync } from "../lib/profileSync";
+import { socket } from "../lib/socket";
 import { API_URL } from "../config";
 import defaultAvatar from "../../assets/scene1.jpeg";
 
-function FriendListItem({ f, navigate, setFriendToRemove }) {
+function FriendListItem({ f, navigate, setFriendToRemove, onMessage }) {
   const [profile, setProfile] = useState(null);
 
   useEffect(() => {
@@ -88,6 +90,7 @@ function FriendListItem({ f, navigate, setFriendToRemove }) {
             cursor: 'pointer', padding: '4px'
           }}
           title="Message"
+          onClick={(e) => { e.stopPropagation(); onMessage({ id: f.id, name: profile?.displayName || f.name || "Friend" }); }}
         >
           <MessageCircle size={16} />
         </button>
@@ -99,6 +102,7 @@ function FriendListItem({ f, navigate, setFriendToRemove }) {
 export function Navbar() {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const isSignedIn = Boolean(user && !isGuestUser(user));
   const [displayName, setDisplayName] = useState("");
   const [emotionId, setEmotionId] = useState(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -119,6 +123,11 @@ export function Navbar() {
   const friendCodeCopyTimerRef = useRef(null);
   const [friendToRemove, setFriendToRemove] = useState(null);
   const [removingFriend, setRemovingFriend] = useState(false);
+  const [chatFriend, setChatFriend] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatText, setChatText] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState("");
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -144,23 +153,73 @@ export function Navbar() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!user?.uid) {
+  const refreshNotifications = useCallback(async () => {
+    if (!user?.uid || isGuestUser(user)) {
       setNotifications([]);
       return;
     }
-    const fetchNotifications = async () => {
-      try {
-        const notifs = await api.request(`/api/notifications/${user.uid}`);
-        setNotifications(notifs || []);
-      } catch (err) {
-        console.error("Failed to fetch notifications", err);
-      }
-    };
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 3000); // Poll every 3 seconds for real-time feel
-    return () => clearInterval(interval);
+
+    try {
+      const notifs = await api.request(`/api/notifications/${user.uid}`);
+      setNotifications(notifs || []);
+    } catch (err) {
+      console.error("Failed to fetch notifications", err);
+    }
   }, [user]);
+
+  const refreshProfileShell = useCallback(async () => {
+    const localName = localStorage.getItem("codefora_username");
+    if (localName) {
+      setDisplayName(localName);
+    } else if (user) {
+      setDisplayName(user.displayName || user.email?.split('@')[0] || "Guest");
+    } else {
+      setDisplayName("");
+    }
+
+    if (user?.uid && !isGuestUser(user)) {
+      try {
+        const profile = await getProfile(user.uid);
+        setEmotionId(profile?.emotionId || null);
+        setFriends(profile?.friends || []);
+        setFriendCode(profile?.friendCode || "");
+      } catch (e) {
+        console.error('Failed to fetch profile in navbar', e);
+      }
+    } else {
+      setEmotionId(null);
+      setFriends([]);
+      setFriendCode("");
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.uid || isGuestUser(user)) {
+      setNotifications([]);
+      return undefined;
+    }
+
+    const handleNotificationRefresh = (payload = {}) => {
+      if (!payload.userId || payload.userId === user.uid) refreshNotifications();
+    };
+    const handleFriendsRefresh = (payload = {}) => {
+      if (!payload.userId || payload.userId === user.uid) refreshProfileShell();
+    };
+    const announcePresence = () => socket.emit("user:presence", user.uid);
+
+    refreshNotifications();
+    if (!socket.connected) socket.connect();
+    announcePresence();
+    socket.on("connect", announcePresence);
+    socket.on("notifications:refresh", handleNotificationRefresh);
+    socket.on("friends:refresh", handleFriendsRefresh);
+
+    return () => {
+      socket.off("connect", announcePresence);
+      socket.off("notifications:refresh", handleNotificationRefresh);
+      socket.off("friends:refresh", handleFriendsRefresh);
+    };
+  }, [refreshNotifications, refreshProfileShell, user]);
 
   const handleMarkAsRead = async (notificationId = null) => {
     if (!user?.uid) return;
@@ -176,6 +235,40 @@ export function Navbar() {
       }
     } catch (err) {
       console.error("Failed to mark as read", err);
+    }
+  };
+
+  const openDirectMessage = async (notification) => {
+    if (!notification?.messageId) return;
+    setChatFriend({ id: notification.senderId, name: notification.senderName || "Friend" });
+    setChatMessages([{ id: notification.messageId, senderId: notification.senderId, senderName: notification.senderName, text: notification.message?.replace(`${notification.senderName}: `, "") || "", createdAt: notification.createdAt, incoming: true }]);
+    setChatError("");
+    setShowNotifications(false);
+    try {
+      await api.markDirectMessageSeen(notification.messageId);
+      setNotifications(prev => prev.filter(item => item.id !== notification.id));
+    } catch (error) {
+      setChatError(error.message || "Could not open this message.");
+    }
+  };
+
+  const sendDirectMessage = async () => {
+    const text = chatText.trim();
+    if (!chatFriend?.id || !text || chatBusy) return;
+    setChatBusy(true);
+    setChatError("");
+    try {
+      const response = await api.sendDirectMessage({
+        recipientId: chatFriend.id,
+        senderName: displayName || user.displayName || "User",
+        text,
+      });
+      setChatMessages(prev => [...prev, { ...response.message, incoming: false }]);
+      setChatText("");
+    } catch (error) {
+      setChatError(error.message || "Could not send message.");
+    } finally {
+      setChatBusy(false);
     }
   };
 
@@ -214,7 +307,7 @@ export function Navbar() {
       } else {
         setRequestStatus("User not found");
       }
-    } catch (err) {
+    } catch {
       setRequestStatus("User not found");
     }
   };
@@ -250,7 +343,7 @@ export function Navbar() {
     try {
       await copyToClipboard(codeToCopy);
       setFriendCodeCopyStatus("Copied!");
-    } catch (err) {
+    } catch {
       setFriendCodeCopyStatus("Copy failed");
     }
 
@@ -274,7 +367,9 @@ export function Navbar() {
             cp.friends = cp.friends.filter(f => f.id !== friendId);
             localStorage.setItem("codefora_profile_" + user.uid, JSON.stringify(cp));
           }
-        } catch(e) {}
+        } catch {
+          // Ignore malformed cached profile data.
+        }
       }
     } catch (err) {
       console.error(err);
@@ -288,47 +383,19 @@ export function Navbar() {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
-    const updateName = async () => {
-      const localName = localStorage.getItem("codefora_username");
-      if (localName) {
-        setDisplayName(localName);
-      } else if (user) {
-        setDisplayName(user.displayName || user.email?.split('@')[0] || "Guest");
-      } else {
-        setDisplayName("");
-      }
-
-      if (user?.uid && !isGuestUser(user)) {
-        try {
-          const profile = await getProfile(user.uid);
-          if (profile?.emotionId) {
-            setEmotionId(profile.emotionId);
-          } else {
-            setEmotionId(null);
-          }
-          if (profile?.friends) {
-            setFriends(profile.friends);
-          } else {
-            setFriends([]);
-          }
-          if (profile?.friendCode) {
-            setFriendCode(profile.friendCode);
-          } else {
-            setFriendCode("");
-          }
-        } catch (e) {
-          console.error('Failed to fetch profile in navbar', e);
-        }
-      } else {
-        setEmotionId(null);
-        setFriends([]);
-        setFriendCode("");
-      }
+    refreshProfileShell();
+    window.addEventListener("profileUpdated", refreshProfileShell);
+    const unsubscribeProfileSync = subscribeProfileSync((profile) => {
+      if (profile.uid && profile.uid !== user?.uid) return;
+      if (profile.displayName) setDisplayName(profile.displayName);
+      setEmotionId(profile.emotionId || null);
+      refreshProfileShell();
+    });
+    return () => {
+      window.removeEventListener("profileUpdated", refreshProfileShell);
+      unsubscribeProfileSync();
     };
-    updateName();
-    window.addEventListener("profileUpdated", updateName);
-    return () => window.removeEventListener("profileUpdated", updateName);
-  }, [user]);
+  }, [refreshProfileShell, user?.uid]);
 
   const handleLogout = async () => {
     try {
@@ -369,7 +436,7 @@ export function Navbar() {
         {isAdmin && <NavLink to="/admin" style={linkStyle}>Dashboard</NavLink>}
       </nav>
       <div className="app-navbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-        {user && (
+        {isSignedIn && (
           <>
             {/* Friends Dropdown */}
             <div style={{ position: 'relative' }} ref={friendsRef}>
@@ -493,7 +560,13 @@ export function Navbar() {
 
                   {friends.length > 0 ? (
                     friends.map((f, i) => (
-                      <FriendListItem key={i} f={f} navigate={navigate} setFriendToRemove={setFriendToRemove} />
+                      <FriendListItem
+                        key={i}
+                        f={f}
+                        navigate={navigate}
+                        setFriendToRemove={setFriendToRemove}
+                        onMessage={(friend) => { setChatFriend(friend); setChatMessages([]); setChatError(""); setShowFriends(false); }}
+                      />
                     ))
                   ) : (
                     <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', padding: '20px 0', fontSize: '13px' }}>
@@ -555,7 +628,7 @@ export function Navbar() {
                   notifications.map(n => (
                     <div 
                       key={n.id} 
-                      onClick={() => { if (!n.read) handleMarkAsRead(n.id); }}
+                      onClick={() => n.type === "direct_message" ? openDirectMessage(n) : (!n.read && handleMarkAsRead(n.id))}
                       style={{ 
                         padding: '10px', borderRadius: '6px', 
                         background: n.read ? 'transparent' : 'rgba(255,255,255,0.05)',
@@ -603,6 +676,15 @@ export function Navbar() {
                           </button>
                         </div>
                       )}
+                      {n.type === 'direct_message' && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); openDirectMessage(n); }}
+                          style={{ marginTop: '8px', width: '100%', padding: '6px', background: 'var(--primary-accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                        >
+                          Open Chat
+                        </button>
+                      )}
                     </div>
                   ))
                 ) : (
@@ -615,8 +697,49 @@ export function Navbar() {
             </div>
           </>
         )}
+
+        {chatFriend && (
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(2, 6, 23, 0.68)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+            onClick={() => setChatFriend(null)}
+          >
+            <div
+              style={{ width: 'min(420px, 100%)', maxHeight: 'min(620px, 90vh)', display: 'flex', flexDirection: 'column', background: '#0f172a', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '12px', boxShadow: '0 24px 70px rgba(0,0,0,0.5)', overflow: 'hidden' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                <div>
+                  <strong style={{ color: 'white', fontSize: '16px' }}>Chat with {chatFriend.name}</strong>
+                  <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px', marginTop: '3px' }}>Messages disappear from the preview when this window closes.</div>
+                </div>
+                <button type="button" onClick={() => setChatFriend(null)} aria-label="Close chat" style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: '22px', cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ flex: 1, minHeight: '220px', maxHeight: '410px', overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {chatMessages.length === 0 && <div style={{ margin: 'auto', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>Start a private conversation.</div>}
+                {chatMessages.map(message => {
+                  const outgoing = message.senderId === user.uid;
+                  return <div key={message.id} style={{ alignSelf: outgoing ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '9px 11px', borderRadius: outgoing ? '12px 12px 3px 12px' : '12px 12px 12px 3px', background: outgoing ? 'rgba(249,115,22,0.22)' : 'rgba(255,255,255,0.08)', color: 'white', fontSize: '13px', lineHeight: 1.4 }}>
+                    {message.text}
+                  </div>;
+                })}
+              </div>
+              {chatError && <div style={{ color: '#fca5a5', fontSize: '12px', padding: '0 16px 8px' }}>{chatError}</div>}
+              <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <input
+                  value={chatText}
+                  onChange={e => setChatText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDirectMessage(); } }}
+                  placeholder="Write a private message..."
+                  maxLength={1000}
+                  style={{ flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '7px', color: 'white', padding: '9px 10px', outline: 'none' }}
+                />
+                <button type="button" onClick={sendDirectMessage} disabled={chatBusy || !chatText.trim()} style={{ border: 'none', borderRadius: '7px', padding: '0 14px', background: 'var(--primary-accent)', color: 'white', fontWeight: 700, cursor: chatBusy || !chatText.trim() ? 'not-allowed' : 'pointer', opacity: chatBusy || !chatText.trim() ? 0.55 : 1 }}>Send</button>
+              </div>
+            </div>
+          </div>
+        )}
         
-        {user ? (
+        {isSignedIn ? (
           <div style={{ position: 'relative' }} ref={dropdownRef}>
             <button 
               onClick={() => setShowDropdown(!showDropdown)}
@@ -639,7 +762,7 @@ export function Navbar() {
             </button>
             
             {showDropdown && (
-              <div style={{
+              <div className="navbar-profile-menu" style={{
                 position: 'absolute', top: 'calc(100% + 10px)', right: 0,
                 background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '8px', padding: '8px', minWidth: '150px',

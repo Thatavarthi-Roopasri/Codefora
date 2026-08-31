@@ -1,16 +1,16 @@
 import { defaultFiles } from "../data/defaultFiles.js";
 import { languageFromName, starterCode } from "../utils/files.js";
-import { cryptoId, slugify } from "../utils/id.js";
+import { cryptoId } from "../utils/id.js";
 
 export class RoomService {
   constructor(repository) {
     this.repository = repository;
   }
 
-  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage }) {
+  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, files, notes, activeFile, readOnly, sourceWorkId, completedAt }) {
     const trimmedName = name?.trim() || "Untitled Lab";
 
-    if (this.repository.findByName(trimmedName)) {
+    if (this.repository.findByName(trimmedName) && !sourceWorkId) {
       throw new Error("Room name is already taken.");
     }
 
@@ -29,10 +29,14 @@ export class RoomService {
       id,
       name: trimmedName,
       visibility: visibility === "private" ? "private" : "public",
-      files: structuredClone(defaultFiles),
+      files: normalizeRoomFiles(files),
       messages: [],
       users: [],
-      notes: { text: "", draws: [] },
+      notes: {
+        text: String(notes?.text || "").slice(0, 10000),
+        draws: Array.isArray(notes?.draws) ? notes.draws.slice(-2000) : [],
+      },
+      activeFile: String(activeFile || "").trim() || null,
       timer: { endTime: null, duration: 25 * 60, isRunning: false },
       history: [],
       hostName: username?.trim() || "Host",
@@ -43,11 +47,26 @@ export class RoomService {
       max: Math.min(Number(max) || 7, 7),
       isChallenge: !!isChallenge,
       targetImage: targetImage || null,
+      challengeId: challengeId || null,
+      readOnly: Boolean(readOnly),
+      sourceWorkId: sourceWorkId || null,
+      completedAt: completedAt || null,
       createdAt: Date.now()
     };
   }
 
-  publicRoom(room) {
+  publicRoom(room, viewerUserId = null) {
+    const isOwner = Boolean(viewerUserId && room.ownerUserId && viewerUserId === room.ownerUserId);
+    const project = room.project ? {
+      id: room.project.id,
+      ownerId: room.project.ownerId,
+      title: room.project.title,
+      status: room.project.status,
+      updatedAt: room.project.updatedAt,
+      completedAt: room.project.completedAt || null,
+      checkpointCount: room.project.checkpointCount || 0,
+    } : null;
+
     return {
       id: room.id,
       name: room.name,
@@ -55,11 +74,19 @@ export class RoomService {
       users: room.users.length,
       max: room.max || 7,
       hostName: room.hostName || "Host",
-      status: room.users.length > 0 ? "active" : "idle",
+      status: project?.status === "completed" ? "completed" : (room.users.length > 0 ? "active" : "idle"),
       usersList: (room.users || []).slice(0, 6),
       lang: room.files.find((file) => file.name.endsWith(".js"))?.language || "mixed",
       problemId: room.problemId || null,
-      createdAt: room.createdAt || Date.now()
+      isChallenge: Boolean(room.isChallenge),
+      targetImage: room.targetImage || null,
+      challengeId: room.challengeId || null,
+      createdAt: room.createdAt || Date.now(),
+      readOnly: Boolean(room.readOnly),
+      completedAt: room.completedAt || null,
+      canJoinWithoutCode: isOwner,
+      sourceWorkId: room.sourceWorkId || null,
+      project,
     };
   }
 
@@ -73,6 +100,7 @@ export class RoomService {
       messages: room.messages.slice(-50),
       usersList: room.users,
       notes: room.notes || { text: "", draws: [] },
+      activeFile: room.activeFile || null,
       timer: room.timer || { endTime: null, duration: 25 * 60, isRunning: false },
       history: (room.history || []).slice(-10) // Only send recent 10 major snapshots
     };
@@ -116,4 +144,24 @@ export class RoomService {
     room.files = room.files.filter((file) => file.name !== fileName);
     return true;
   }
+}
+
+function normalizeRoomFiles(files) {
+  if (!Array.isArray(files) || files.length === 0) return structuredClone(defaultFiles);
+
+  const normalized = files
+    .slice(0, 8)
+    .map((file) => {
+      const name = String(file?.name || '').trim().replace(/[\\/]/g, '');
+      const code = String(file?.code || '');
+      if (!name || Buffer.byteLength(code, 'utf8') > 200_000) return null;
+      return {
+        name,
+        language: String(file?.language || '').trim() || languageFromName(name),
+        code,
+      };
+    })
+    .filter(Boolean);
+
+  return normalized.length ? normalized : structuredClone(defaultFiles);
 }

@@ -139,7 +139,7 @@ export function FloatingProblem({ problem, onClose, onSubmit }) {
                       btn.style.background = "";
                     }, 2500);
                   }
-                } catch (err) {
+                } catch {
                   btn.innerHTML = "Error Submitting";
                   btn.style.background = "#ef4444";
                   setTimeout(() => {

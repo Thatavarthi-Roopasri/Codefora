@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { createCompilerRoutes } from "./compiler.js";
 import { adminAuth } from "../middleware/adminAuth.js";
-import { firebaseAuth } from "../middleware/firebaseAuth.js";
+import { firebaseAuth, optionalFirebaseAuth, requireCurrentUser } from "../middleware/firebaseAuth.js";
 import rateLimit from "express-rate-limit";
-import { generateChallenge, submitChallenge } from "../controllers/challengeController.js";
+import { generateChallenge, getChallengeRuntimeStatus, submitChallenge } from "../controllers/challengeController.js";
+import { getFirebaseServiceStatus } from "../config/firebase.js";
+import { validateStartupEnv } from "../config/envValidation.js";
 
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
@@ -17,17 +19,37 @@ const heavyLimiter = rateLimit({
   message: { error: "Rate limit exceeded for heavy operations." }
 });
 
-export function createApiRoutes({ roomController, executionController, aiController, emotionController, profileController, compilerController, adminController, problemController, feedbackController, notificationController }) {
+export function createApiRoutes({ roomController, roomProjectController, roomRepository, executionController, aiController, emotionController, profileController, compilerController, adminController, problemController, feedbackController, notificationController, directMessageController }) {
   const router = Router();
   
   // Apply standard rate limit to all routes
   router.use(apiLimiter);
 
-  router.get("/health", (_request, response) => response.json({ ok: true }));
-  router.get("/rooms", roomController.list);
-  router.post("/rooms", roomController.rateLimit, roomController.create);
+  router.get("/health", (_request, response) => {
+    const firebase = getFirebaseServiceStatus();
+    response.json({
+      ok: true,
+      firestore: firebase.firestore.mode,
+      auth: firebase.auth.mode,
+      services: {
+        environment: validateStartupEnv({ strict: false }),
+        firebase,
+        challengeRenderer: getChallengeRuntimeStatus(),
+        rooms: {
+          storage: roomRepository?.storageMode?.() || "unknown"
+        }
+      }
+    });
+  });
+  router.get("/rooms", optionalFirebaseAuth, roomController.list);
+  router.post("/rooms", optionalFirebaseAuth, roomController.rateLimit, roomController.create);
   router.get("/rooms/invite/:code", roomController.findByInviteCode);
-  router.get("/rooms/:id", roomController.get);
+  if (roomProjectController) {
+    router.post("/rooms/:id/project", firebaseAuth, roomProjectController.save);
+    router.post("/rooms/:id/project/resume", firebaseAuth, roomProjectController.resume);
+    router.post("/rooms/:id/project/end", firebaseAuth, roomProjectController.end);
+  }
+  router.get("/rooms/:id", optionalFirebaseAuth, roomController.get);
   
   // Public problem routes
   router.get("/problems", problemController.list);
@@ -36,16 +58,21 @@ export function createApiRoutes({ roomController, executionController, aiControl
   if (profileController) {
     router.post("/profiles/bootstrap", firebaseAuth, profileController.bootstrap);
     router.get("/profiles/search/:query", profileController.searchUser);
-    router.get("/profiles/:userId", profileController.get);
-    router.post("/profiles/:userId", profileController.save);
-    router.post("/profiles/:userId/save-work", profileController.saveWork);
-    router.post("/profiles/:userId/tour-status", profileController.saveTourStatus);
-    router.get("/profiles/:userId/tour-status/:pageName", profileController.getTourStatus);
-    router.post("/profiles/:userId/solve", profileController.solveProblem);
-    router.get("/profiles/:userId/works", profileController.listWorks);
-    router.post("/profiles/:userId/friends/request", profileController.sendFriendRequest);
-    router.post("/profiles/:userId/friends/handle", profileController.handleFriendRequest);
-    router.delete("/profiles/:userId/friends/:friendId", profileController.removeFriend);
+    router.get("/profiles/:userId", optionalFirebaseAuth, profileController.get);
+    router.post("/profiles/:userId", firebaseAuth, requireCurrentUser, profileController.save);
+    router.post("/profiles/:userId/save-work", firebaseAuth, requireCurrentUser, profileController.saveWork);
+    router.post("/profiles/:userId/works/:workId/end", firebaseAuth, requireCurrentUser, profileController.endWork);
+    if (profileController.deleteWork) {
+      router.delete("/profiles/:userId/works/:workId", firebaseAuth, requireCurrentUser, profileController.deleteWork);
+    }
+    router.post("/profiles/:userId/works/:workId/resume-room", firebaseAuth, requireCurrentUser, roomProjectController.reopenSavedWork);
+    router.post("/profiles/:userId/tour-status", firebaseAuth, requireCurrentUser, profileController.saveTourStatus);
+    router.get("/profiles/:userId/tour-status/:pageName", firebaseAuth, requireCurrentUser, profileController.getTourStatus);
+    router.post("/profiles/:userId/solve", firebaseAuth, requireCurrentUser, profileController.solveProblem);
+    router.get("/profiles/:userId/works", firebaseAuth, requireCurrentUser, profileController.listWorks);
+    router.post("/profiles/:userId/friends/request", firebaseAuth, requireCurrentUser, profileController.sendFriendRequest);
+    router.post("/profiles/:userId/friends/handle", firebaseAuth, requireCurrentUser, profileController.handleFriendRequest);
+    router.delete("/profiles/:userId/friends/:friendId", firebaseAuth, requireCurrentUser, profileController.removeFriend);
   }
   if (compilerController) {
     router.use("/compiler", heavyLimiter, createCompilerRoutes(compilerController));
@@ -78,6 +105,7 @@ export function createApiRoutes({ roomController, executionController, aiControl
 
   // Admin routes (Protected)
   if (adminController) {
+    router.get("/admin/me", adminAuth, adminController.me);
     if (notificationController) {
       router.post("/admin/announcements", adminAuth, notificationController.sendAnnouncement);
     }
@@ -101,6 +129,11 @@ export function createApiRoutes({ roomController, executionController, aiControl
     router.get("/notifications/:userId", notificationController.getNotifications);
     router.post("/notifications/invite", notificationController.sendRoomInvite);
     router.post("/notifications/:userId/read", notificationController.markAsRead);
+  }
+  if (directMessageController) {
+    router.post("/messages", firebaseAuth, directMessageController.send);
+    router.get("/messages/:messageId", firebaseAuth, directMessageController.get);
+    router.post("/messages/:messageId/seen", firebaseAuth, directMessageController.seen);
   }
 
   return router;

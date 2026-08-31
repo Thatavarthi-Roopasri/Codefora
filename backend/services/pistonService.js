@@ -1,6 +1,6 @@
-const PISTON_EXECUTE_URL = process.env.PISTON_EXECUTE_URL || "http://localhost:2000/api/v2/execute";
-const PISTON_AUTH_TOKEN = String(process.env.PISTON_AUTH_TOKEN || "").trim();
-const PISTON_AUTH_SCHEME = String(process.env.PISTON_AUTH_SCHEME || "Bearer").trim() || "Bearer";
+
+
+
 
 const JUDGE0_URL = "https://ce.judge0.com/submissions?base64_encoded=true&wait=true";
 

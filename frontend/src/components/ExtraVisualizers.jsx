@@ -6,7 +6,7 @@ const springTrans = { type: 'spring', stiffness: 300, damping: 25 };
 /**
  * StackViz — renders a visual stack with push/pop animations.
  */
-const StackViz = ({ stack = [], currentChar = null, input = '', inputIndex = -1, result = null, valid = null }) => {
+const StackViz = ({ stack = [], input = '', inputIndex = -1, valid = null }) => {
   return (
     <div className="flex flex-col gap-6 py-2">
       {/* Input string display */}

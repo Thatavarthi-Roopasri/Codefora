@@ -6,7 +6,13 @@ import { buildPreview } from "../lib/preview";
 import { socket } from "../lib/socket";
 import { trackEvent } from "../lib/analytics";
 
-export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "", bypassBlockerRef = null) {
+const SAVE_WORK_SYNC_DELAY_MS = 1500;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "", bypassBlockerRef = null, isGuest = false) {
   const navigate = useNavigate();
   const [room, setRoom] = useState(null);
   const [resolvedRoomId, setResolvedRoomId] = useState(roomId);
@@ -29,10 +35,11 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   const [notes, setNotes] = useState({ text: "", draws: [] });
   const [timer, setTimer] = useState({ endTime: null, duration: 25 * 60, isRunning: false });
   const [history, setHistory] = useState([]);
+  const filesRef = useRef([]);
   const remoteUpdate = useRef(false);
   const runRequestId = useRef(0);
   const expectedActiveNameRef = useRef(null);
-  const typingTimer = useRef(null);
+
   const localStream = useRef(null);
   const peers = useRef(new Map());
   const audioHost = useRef(null);
@@ -64,7 +71,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   }, [users, localFallbackUser, typingCursors]);
   const me = users.find((user) => user.socketId === socket.id) || localFallbackUser;
   const isHost = me?.role === "Host";
-  const canEdit = me?.role !== "Viewer";
+  const canEdit = Boolean(me) && !room?.readOnly && me.role !== "Viewer";
   const canSpeak = Boolean(me && me.role !== "Viewer");
   const canChat = Boolean(me);
   const canUseAi = Boolean(room) && room?.allowAi !== false;
@@ -156,7 +163,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
         // If we get a "viewing" update (isTyping=false) but the user was JUST typing (within 1s),
         // keep them as "typing" so the status doesn't flicker between Editing and Viewing.
         const effectiveIsTyping = isTyping || (existing?.isTyping && (Date.now() - existing.updatedAt < 1000));
-        
+
         const nextItems = items.filter((item) => item.cursorId !== cursorId);
         nextItems.unshift({
           cursorId,
@@ -201,7 +208,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
           setResolvedRoomId(snapshot.id);
           saveInviteCode(snapshot.id, targetInviteCode);
           handleRoomState(snapshot);
-        } catch (error) {
+        } catch {
           if (!cancelled) {
             setJoinError({ reason: "not_found", roomId: initialRoomId });
             setOutput("Could not join the room.");
@@ -225,9 +232,13 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
         if (tokenRoomId && hostToken) saveHostToken(tokenRoomId, hostToken);
       });
       socket.on("voice:signal", handleVoiceSignal);
-      socket.on("room:ended", () => {
+      socket.on("room:ended", ({ projectEnded = false, ownerUserId = null } = {}) => {
         if (bypassBlockerRef) bypassBlockerRef.current = true;
-        navigate("/rooms?message=Room ended by host");
+        if (projectEnded && ownerUserId && ownerUserId === activeUserId) {
+          navigate("/profile?project=completed");
+          return;
+        }
+        navigate(`/rooms?message=${encodeURIComponent(projectEnded ? "Project ended by host" : "Room ended by host")}`);
       });
       socket.on("room:kicked", () => {
         if (bypassBlockerRef) bypassBlockerRef.current = true;
@@ -326,6 +337,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
       trackEvent("room_join", { room_id: snapshot.id, visibility: snapshot.visibility });
     }
     setRoom(snapshot);
+    expectedActiveNameRef.current = snapshot.activeFile || null;
     handleFilesUpdate(snapshot.files);
     setMessages(snapshot.messages || []);
     setUsers(snapshot.usersList || []);
@@ -336,8 +348,9 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   }
 
   function handleFilesUpdate(nextFiles) {
+    filesRef.current = nextFiles;
     setFiles(nextFiles);
-    
+
     // Evaluate target outside state updater to avoid React StrictMode double-invocation bugs
     const expected = expectedActiveNameRef.current;
     if (expected && nextFiles.some((f) => f.name === expected)) {
@@ -346,14 +359,18 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     } else {
       setActiveName((current) => nextFiles.some((file) => file.name === current) ? current : nextFiles[0]?.name || "");
     }
-    
+
     setRunFile((current) => nextFiles.some((file) => file.name === current) ? current : nextFiles.find((file) => file.name.endsWith(".js"))?.name || nextFiles[0]?.name || "");
   }
 
   function handleRemoteFileUpdate({ fileName, code }) {
     if (activeFile?.name === fileName) return; // Yjs is already handling this active file
     remoteUpdate.current = true;
-    setFiles((items) => items.map((file) => file.name === fileName ? { ...file, code } : file));
+    setFiles((items) => {
+      const nextFiles = items.map((file) => file.name === fileName ? { ...file, code } : file);
+      filesRef.current = nextFiles;
+      return nextFiles;
+    });
     setTimeout(() => {
       remoteUpdate.current = false;
     }, 50);
@@ -362,13 +379,21 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
   function updateCode(value) {
     if (!activeFile || remoteUpdate.current || !canEdit) return;
     const code = value ?? "";
-    setFiles((items) => items.map((file) => file.name === activeFile.name ? { ...file, code } : file));
+    setFiles((items) => {
+      const nextFiles = items.map((file) => file.name === activeFile.name ? { ...file, code } : file);
+      filesRef.current = nextFiles;
+      return nextFiles;
+    });
     socket.emit("file:update", { roomId: activeRoomId, fileName: activeFile.name, code });
   }
 
   function updateFileCode(fileName, code) {
     if (!fileName || !canEdit) return;
-    setFiles((items) => items.map((file) => file.name === fileName ? { ...file, code } : file));
+    setFiles((items) => {
+      const nextFiles = items.map((file) => file.name === fileName ? { ...file, code } : file);
+      filesRef.current = nextFiles;
+      return nextFiles;
+    });
     socket.emit("file:update", { roomId: activeRoomId, fileName, code });
   }
 
@@ -412,19 +437,24 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     }
   }
 
+  function endCompletedProject() {
+    if (!me || me.role !== "Host") return;
+    socket.emit("room:end", { roomId: activeRoomId });
+  }
+
   function updateRoomSettings({ max, visibility, allowAi, allowCopyPaste }) {
     if (!me || me.role !== "Host") return;
     socket.emit("room:settings", { roomId: activeRoomId, max, visibility, allowAi, allowCopyPaste });
   }
 
-  function setProblem(problemId, targetImage) {
+  function setProblem(problemId, targetImage, challengeId = null) {
     const isHost = Boolean(me && (me.role === "Host" || (me.userId && room?.ownerUserId === me.userId)));
     if (!isHost) {
       alert("You don't have host permission.");
       return;
     }
     console.log("Emitting room:set_problem", { roomId: activeRoomId, problemId });
-    socket.emit("room:set_problem", { roomId: activeRoomId, problemId, targetImage });
+    socket.emit("room:set_problem", { roomId: activeRoomId, problemId, targetImage, challengeId });
   }
 
   function createFile(fileName, language, code) {
@@ -518,7 +548,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     const requestId = runRequestId.current + 1;
     runRequestId.current = requestId;
     const language = normalizeCompilerLanguage(activeFile.language || activeFile.name);
-    
+
     setIsSubmittingCode(true);
     setCompilerStatus("running");
     setOutput("Submitting against all sample test cases...");
@@ -530,9 +560,9 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
       for (let i = 0; i < testCases.length; i++) {
         const testCase = testCases[i];
         if (runRequestId.current !== requestId) return false;
-        
+
         setOutput(`Running test case ${i + 1}/${testCases.length}...`);
-        
+
         const result = await api.runCode({
           language,
           version: undefined,
@@ -542,7 +572,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
         const actual = normalizeOutput(result.stdout || result.executionOutput || result.output);
         const expected = normalizeOutput(testCase.output);
-        
+
         results.push({
           input: testCase.input,
           expected,
@@ -561,19 +591,19 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
       const firstFailed = results.find((result) => !result.passed);
       const passedCount = results.filter((r) => r.passed).length;
       const totalCount = testCases.length;
-      
+
       const nextStatus = firstFailed ? "error" : "finished";
       setCompilerStatus(nextStatus);
 
       if (!firstFailed) {
         setOutput("Program is correct. All sample test cases passed. ✅");
-        if (activeUserId) {
+        if (activeUserId && !isGuest) {
           api.solveProblem(activeUserId, problem.id).catch(console.error);
         }
         return true;
       } else {
         const failedIndex = results.indexOf(firstFailed);
-        
+
         setOutput(`Wrong Answer! ${passedCount}/${totalCount} test cases passed.\nFailed on test case ${failedIndex + 1}:\nInput: ${firstFailed.input}\nExpected: ${firstFailed.expected}\nActual: ${firstFailed.actual || "(empty)"}`);return false;
       }
     } catch (error) {
@@ -668,13 +698,13 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     try {
       if (!localStream.current) {
         // First time initialization
-        const stream = await navigator.mediaDevices.getUserMedia({ 
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true
-          }, 
-          video: false 
+          },
+          video: false
         });
         localStream.current = stream;
 
@@ -696,7 +726,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
             if (speakingTimeout) clearTimeout(speakingTimeout);
             return;
           }
-          
+
           // Skip analysis if mic is muted
           if (!localStream.current.getAudioTracks().some(t => t.enabled)) {
             if (isSpeaking) {
@@ -777,7 +807,6 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
 
   async function createPeer(targetId, initiator) {
     let peer;
-    let isNew = false;
 
     if (peers.current.has(targetId)) {
       peer = peers.current.get(targetId);
@@ -788,7 +817,6 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     }
 
     if (!peer) {
-      isNew = true;
       peer = new RTCPeerConnection({
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
@@ -893,7 +921,7 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
         }
 
         await peer.setRemoteDescription(new RTCSessionDescription(signal.description));
-        
+
         if (peer.pendingCandidates && peer.pendingCandidates.length > 0) {
           for (const candidate of peer.pendingCandidates) {
             await peer.addIceCandidate(candidate).catch(e => console.warn("Queued candidate error", e));
@@ -975,14 +1003,49 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     socket.emit("history:push", { roomId: activeRoomId });
   }
 
+  function snapshotFilesWithLiveEditor({ syncLiveEditor = false } = {}) {
+    const baseFiles = filesRef.current.length ? filesRef.current : files;
+    const liveEditor = window.__codeforaRoomEditors?.[activeRoomId]?.();
+    if (!liveEditor?.fileName || liveEditor.code === undefined) return baseFiles;
+
+    const nextFiles = baseFiles.map((file) => (
+      file.name === liveEditor.fileName ? { ...file, code: liveEditor.code } : file
+    ));
+
+    if (syncLiveEditor) {
+      filesRef.current = nextFiles;
+      setFiles(nextFiles);
+      if (canEdit) {
+        socket.emit("file:update", { roomId: activeRoomId, fileName: liveEditor.fileName, code: liveEditor.code });
+      }
+    }
+
+    return nextFiles;
+  }
+
   async function saveWork(name, customFiles = null) {
-    if (!activeUserId) return { success: false, error: "Please log in to save your work." };
+    if (!activeUserId || isGuest) return { success: false, error: "Sign in with Google to save your work." };
     try {
+      const cleanName = String(name || "").trim() || room?.name || `Project in ${activeRoomId || "room"}`;
+      let snapshotFiles = customFiles;
+      if (!snapshotFiles) {
+        snapshotFilesWithLiveEditor({ syncLiveEditor: true });
+        await wait(SAVE_WORK_SYNC_DELAY_MS);
+        snapshotFiles = snapshotFilesWithLiveEditor({ syncLiveEditor: true });
+      }
+      const stableWorkId = room?.project?.workId || room?.sourceWorkId || null;
       const response = await api.saveWork(activeUserId, {
-        name,
-        files: customFiles || files,
-        type: room?.problemId ? "problem" : "lab",
-        originRoomId: activeRoomId
+        ...(stableWorkId ? { id: stableWorkId } : {}),
+        name: cleanName,
+        roomName: cleanName,
+        sourceRoomName: room?.name || "",
+        files: snapshotFiles,
+        notes,
+        activeFile: activeFile?.name || activeName || null,
+        type: activeRoomId ? "room-project" : (room?.problemId ? "problem" : "lab"),
+        originRoomId: activeRoomId,
+        originInviteCode: getInviteCode(activeRoomId),
+        originHostToken: localHostToken,
       });
       return { success: true, work: response.work };
     } catch (error) {
@@ -1018,11 +1081,12 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     preview: { showPreview, previewDoc },
     compiler: { compilerStatus, isRunningCode, isSubmittingCode },
     actions: {
-      updateCode, updateFileCode, sendChat, sendSticker, endRoom, createFile, deleteActiveFile,
+      updateCode, updateFileCode, sendChat, sendSticker, endRoom, endCompletedProject, createFile, deleteActiveFile,
       updateRole, kickUser, runCode, submitCode, askAi, toggleMic, forceJoin, clearOutput,
       updateNotes, drawNote, startTimer, stopTimer, setTimerMode, pushHistory, saveWork, changeFileLanguage,
       updateRoomSettings, setProblem,
       setPreviewTarget,
+      snapshotFilesWithLiveEditor,
       setExpectedActiveName: (name) => {
         expectedActiveNameRef.current = name;
       }

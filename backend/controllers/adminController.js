@@ -31,11 +31,20 @@ export function createAdminController(roomRepository, { submissionService, audit
   };
 
   return {
+    me: async (request, response) => {
+      return response.json({
+        uid: request.adminUser?.uid || null,
+        email: request.adminUser?.email || null,
+        role: request.adminUser?.isSuperAdmin ? "super-admin" : "admin",
+        isSuperAdmin: Boolean(request.adminUser?.isSuperAdmin)
+      });
+    },
+
     getStats: async (request, response) => {
       try {
         const problems = await readJSON(localProblemsPath);
         const rooms = roomRepository.listAll();
-        
+
         let totalUsers = 0;
         if (auth) {
           // For small user bases, we can list all to get count.
@@ -81,12 +90,12 @@ export function createAdminController(roomRepository, { submissionService, audit
       try {
         if (!auth) return response.json([]);
 
-        const users = [];
+
         const maxUsersToFetch = 1000;
-        const listUsersResult = await auth.listUsers(maxUsersToFetch); 
+        const listUsersResult = await auth.listUsers(maxUsersToFetch);
         const authUsers = listUsersResult.users;
 
-        // Fetch profiles from Firestore 
+        // Fetch profiles from Firestore
         const profilesMap = {};
         if (db) {
           // Fetch up to 1000 recent profiles to match Auth limits without memory leaking
@@ -107,7 +116,7 @@ export function createAdminController(roomRepository, { submissionService, audit
               providerId: user.providerData?.[0]?.providerId || "firebase"
             });
           }
-          
+
           usersList.push({
             userId: user.uid,
             friendCode: profile.friendCode || "",
@@ -124,7 +133,7 @@ export function createAdminController(roomRepository, { submissionService, audit
             lastActive: user.metadata.lastSignInTime || user.metadata.creationTime
           });
         }
-        
+
         usersList.sort((a, b) => {
           if (a.status === "Online" && b.status !== "Online") return -1;
           if (b.status === "Online" && a.status !== "Online") return 1;
@@ -142,21 +151,21 @@ export function createAdminController(roomRepository, { submissionService, audit
         if (!request.adminUser?.isSuperAdmin) {
           return response.status(403).json({ error: "Only Super Admins can manage roles." });
         }
-        
+
         const { id } = request.params;
         const { role } = request.body;
         if (!["admin", "user"].includes(role)) {
           return response.status(400).json({ error: "Role must be admin or user." });
         }
-        
+
         if (!db || db.isMock) return response.status(500).json({ error: "Database not available" });
-        
+
         const userRef = db.collection("users").doc(id);
         const userDoc = await userRef.get();
-        
+
         let profile = userDoc.exists ? userDoc.data().profile || {} : {};
         profile.role = role;
-        
+
         await userRef.set({ profile }, { merge: true });
         recordAudit(request, "user.role_changed", id, `Role changed to ${role}`);
         return response.json({ success: true, role });
@@ -250,7 +259,7 @@ export function createAdminController(roomRepository, { submissionService, audit
         const { id } = request.params;
         const room = roomRepository.findById(id);
         if (!room) return response.status(404).json({ error: "Room not found" });
-        
+
         room.isLocked = !room.isLocked;
         await roomRepository.save(room);
         recordAudit(request, room.isLocked ? "room.locked" : "room.unlocked", id, room.name || "");
@@ -266,7 +275,7 @@ export function createAdminController(roomRepository, { submissionService, audit
         const problems = await readJSON(localProblemsPath);
         const problem = problems.find(p => p.id === id);
         if (!problem) return response.status(404).json({ error: "Problem not found" });
-        
+
         problem.published = !problem.published;
         await writeJSON(localProblemsPath, problems);
         recordAudit(request, problem.published ? "problem.published" : "problem.unpublished", id, problem.title || "");
@@ -280,7 +289,7 @@ export function createAdminController(roomRepository, { submissionService, audit
       try {
         const problem = request.body;
         if (!problem.id || !problem.title) return response.status(400).json({ error: "ID and Title are required" });
-        
+
         const problems = await readJSON(localProblemsPath);
         problems.push({ ...problem, published: false });
         await writeJSON(localProblemsPath, problems);
@@ -298,7 +307,7 @@ export function createAdminController(roomRepository, { submissionService, audit
         const problems = await readJSON(localProblemsPath);
         const index = problems.findIndex(p => p.id === id);
         if (index === -1) return response.status(404).json({ error: "Problem not found" });
-        
+
         problems[index] = { ...problems[index], ...updates };
         await writeJSON(localProblemsPath, problems);
         recordAudit(request, "problem.updated", id, updates.title || problems[index].title || "");

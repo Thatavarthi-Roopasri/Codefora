@@ -1,12 +1,11 @@
 import React from 'react';
 
 export const TourMascotTooltip = ({
-  continuous,
+
   index,
   step,
   isLastStep,
   backProps,
-  closeProps,
   skipProps,
   primaryProps,
   tooltipProps,
@@ -27,8 +26,7 @@ export const TourMascotTooltip = ({
         flexDirection: 'column',
         gap: '16px',
         color: 'var(--text-primary)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-        position: 'relative'
+        boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
       }}
     >
       {/* Mascot Header */}
@@ -73,7 +71,7 @@ export const TourMascotTooltip = ({
             if (typeof window.setTourToggleState === 'function') window.setTourToggleState(false);
             const cb = document.getElementById('tour-toggle-checkbox');
             if (cb) cb.checked = false;
-            
+
             // Brutal override: violently force localStorage memory
             try {
               const pathPage = window.location.pathname.startsWith('/code/') ? 'code_room' : 'rooms';
@@ -81,7 +79,9 @@ export const TourMascotTooltip = ({
               if (window.currentUserUid) {
                 localStorage.setItem(`codefora_tour_${window.currentUserUid}_${pathPage}`, 'true');
               }
-            } catch(err) {}
+            } catch {
+              // Ignore storage failures when skipping tours.
+            }
 
             if (skipProps && skipProps.onClick) skipProps.onClick(e);
           }}
@@ -96,7 +96,7 @@ export const TourMascotTooltip = ({
         >
           Skip Tour
         </button>
-        
+
         <div style={{ display: 'flex', gap: '8px' }}>
           {index > 0 && (
             <button
@@ -121,7 +121,7 @@ export const TourMascotTooltip = ({
                 if (typeof window.setTourToggleState === 'function') window.setTourToggleState(false);
                 const cb = document.getElementById('tour-toggle-checkbox');
                 if (cb) cb.checked = false;
-                
+
                 // Brutal override: violently force localStorage memory
                 try {
                   const pathPage = window.location.pathname.startsWith('/code/') ? 'code_room' : 'rooms';
@@ -129,7 +129,9 @@ export const TourMascotTooltip = ({
                   if (window.currentUserUid) {
                     localStorage.setItem(`codefora_tour_${window.currentUserUid}_${pathPage}`, 'true');
                   }
-                } catch(err) {}
+                } catch {
+                  // Ignore storage failures when completing tours.
+                }
               }
               if (primaryProps && primaryProps.onClick) primaryProps.onClick(e);
             }}

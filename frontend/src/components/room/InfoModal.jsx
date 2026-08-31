@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Shield, Code, Eye, MessageSquare, Zap, Mic, BookOpen, Info, StickyNote, Upload } from 'lucide-react';
+import { X, Shield, MessageSquare, Zap, Mic, BookOpen, Info, StickyNote, Upload } from 'lucide-react';
 
 export function InfoModal({ isOpen, onClose }) {
   if (!isOpen) return null;

@@ -15,11 +15,11 @@ const VariablePanel = () => {
       <h3 className="text-xl font-marker font-bold text-black mb-3 border-b-2 border-black pb-1">
         📋 Variables & Memory
       </h3>
-      
+
       <div className="space-y-2 font-handwritten text-xl">
         <AnimatePresence>
           {entries.length === 0 ? (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="text-gray-400 italic text-lg"
@@ -28,7 +28,7 @@ const VariablePanel = () => {
             </motion.div>
           ) : (
             entries.map(([key, value]) => {
-              const isChanged = value !== "undefined";
+
               return (
                 <motion.div
                   key={key}
@@ -40,7 +40,7 @@ const VariablePanel = () => {
                 >
                   <span className="font-bold text-purple-700 font-mono text-base">{key}</span>
                   <span className="text-gray-400 font-bold mx-2">→</span>
-                  <motion.span 
+                  <motion.span
                     key={`${key}-${value}`} // Re-animate on value change
                     initial={{ scale: 1.3, color: '#dc2626' }} // red marker highlight when changing
                     animate={{ scale: 1, color: value === 'null' ? '#16a34a' : '#111111' }} // default black or green for null

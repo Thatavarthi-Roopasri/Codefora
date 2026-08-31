@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, CheckCircle, HelpCircle } from 'lucide-react';
+import React from 'react';
+import { } from 'lucide-react';
 
 export function ProblemPanel({ problem }) {
   if (!problem) return null;

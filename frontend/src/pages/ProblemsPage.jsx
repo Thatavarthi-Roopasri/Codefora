@@ -1,11 +1,11 @@
 import Editor from "@monaco-editor/react";
-import { ArrowLeft, Bot, BookOpen, CheckCircle, Loader2, MessageCircle, MessageSquare, Play, Search, Send, Sparkles, Users, X, XCircle, Plus, Lock, Zap, List, LayoutGrid, Bookmark, Star, ChevronRight, ChevronLeft, ChevronDown, Hash, Code, User, Clock, Brain, AlertCircle, Maximize2, PlayCircle } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle, Loader2, Play, Search, Users, XCircle, Lock, Zap, List, LayoutGrid, Star, ChevronRight, ChevronLeft, ChevronDown, Hash, Code, PlayCircle } from "lucide-react";
 import { dryRunComponents } from "../dryruns";
 import { PROBLEMS_DRYRUNS } from "../data/problemsDryRun";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, NavLink } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { BrandButton } from "../components/BrandButton";
+
 import { Navbar } from "../components/Navbar";
 import { trackEvent } from "../lib/analytics";
 import { saveUsername, saveHostToken, saveInviteCode } from "../lib/navigation";
@@ -14,7 +14,7 @@ import { isGuestUser } from "../lib/userAccess";
 import "../styles/problems-v2.css";
 
 const allTags = ["Arrays", "Graphs", "DP", "Trees", "Strings", "Patterns", "Greedy", "Binary Search", "Math"];
-const difficulties = ["Easy", "Medium", "Hard"];
+
 const sortOptions = ["Difficulty", "Most Solved", "Newest", "Trending"];
 const difficultyWeights = { Easy: 1, Medium: 2, Hard: 3 };
 
@@ -673,7 +673,7 @@ export function ProblemsPage() {
                     color: hasDryRun ? '#F59E0B' : '#4B5563',
                     opacity: hasDryRun ? 1 : 0.5 
                   }}
-                  onClick={(e) => {
+                  onClick={() => {
                     if (hasDryRun) {
                       navigate(`/problems/${selectedProblem.id}/dry-run/${dryRunIndex}`, {
                         state: { returnView: "detail", selectedProblemId: selectedProblem.id }

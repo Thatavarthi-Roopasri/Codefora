@@ -1,23 +1,24 @@
-import { useEffect, useState } from "react";
-import { Check, Headphones, Mic, MicOff, MoreVertical, Shield, UserX, MessageSquare, Volume2, Plus } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Check, MicOff, MoreVertical, Shield, UserX, MessageSquare, Volume2, Plus } from "lucide-react";
 import { getInviteCode } from "../../lib/navigation";
 import { API_URL } from "../../config";
 import { useAuth } from "../../hooks/useAuth";
-import { getProfile } from "../../api/client";
+import { api, getProfile } from "../../api/client";
 import { isGuestUser } from "../../lib/userAccess";
+import { socket } from "../../lib/socket";
 
-export function UsersPanel({ 
-  room, 
-  roomId, 
-  users, 
-  permissions, 
-  onRoleChange, 
+export function UsersPanel({
+  room,
+  roomId,
+  users,
+  permissions,
+  onRoleChange,
   onKickUser
 }) {
   const [openMenuFor, setOpenMenuFor] = useState(null);
   const [expandedUser, setExpandedUser] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
-  
+
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 3000);
@@ -28,28 +29,58 @@ export function UsersPanel({
   const [onlineFriends, setOnlineFriends] = useState([]);
   const [invitingFriendId, setInvitingFriendId] = useState(null);
 
-  useEffect(() => {
-    if (!currentUser?.uid || isGuestUser(currentUser)) return;
-    let active = true;
-    const fetchFriends = async () => {
-      try {
-        const myProfile = await getProfile(currentUser.uid);
-        if (!active || !myProfile?.friends) return;
-        
-        const friendsData = [];
-        for (const f of myProfile.friends) {
-          const profile = await getProfile(f.id).catch(() => null);
-          if (profile && (profile.presence === 'online' || profile.presence === 'in-room')) {
-            friendsData.push({ ...f, ...profile });
-          }
+  const refreshOnlineFriends = useCallback(async () => {
+    if (!currentUser?.uid || isGuestUser(currentUser)) {
+      setOnlineFriends([]);
+      return;
+    }
+
+    try {
+      const myProfile = await getProfile(currentUser.uid);
+      if (!myProfile?.friends) {
+        setOnlineFriends([]);
+        return;
+      }
+
+      const friendsData = [];
+      for (const f of myProfile.friends) {
+        const profile = await getProfile(f.id).catch(() => null);
+        if (profile && (profile.presence === 'online' || profile.presence === 'in-room')) {
+          friendsData.push({ ...f, ...profile });
         }
-        if (active) setOnlineFriends(friendsData);
-      } catch(e) {}
-    };
-    fetchFriends();
-    const intv = setInterval(fetchFriends, 3000); // Poll every 3s for faster presence updates
-    return () => { active = false; clearInterval(intv); };
+      }
+      setOnlineFriends(friendsData);
+    } catch {
+      // Ignore friend presence refresh failures.
+    }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser?.uid || isGuestUser(currentUser)) {
+      setOnlineFriends([]);
+      return undefined;
+    }
+
+    let active = true;
+    const refreshIfActive = () => {
+      if (active) refreshOnlineFriends();
+    };
+    const announcePresence = () => socket.emit("user:presence", currentUser.uid);
+
+    refreshIfActive();
+    if (!socket.connected) socket.connect();
+    announcePresence();
+    socket.on("connect", announcePresence);
+    socket.on("friends:refresh", refreshIfActive);
+    socket.on("presence:changed", refreshIfActive);
+
+    return () => {
+      active = false;
+      socket.off("connect", announcePresence);
+      socket.off("friends:refresh", refreshIfActive);
+      socket.off("presence:changed", refreshIfActive);
+    };
+  }, [currentUser, refreshOnlineFriends]);
 
   const handleInvite = async (friend) => {
     if (friend.presence === 'in-room') {
@@ -58,9 +89,8 @@ export function UsersPanel({
     }
     setInvitingFriendId(friend.id);
     try {
-      await fetch(`${API_URL}/api/notifications/invite`, {
+      await api.request("/api/notifications/invite", {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetUserId: friend.id,
           roomId: roomId,
@@ -69,7 +99,7 @@ export function UsersPanel({
         })
       });
       showToast("Invite sent!");
-    } catch(e) {
+    } catch {
       showToast("Failed to send invite");
     } finally {
       setInvitingFriendId(null);
@@ -94,26 +124,26 @@ export function UsersPanel({
   }, []);
 
   return (
-    <aside 
-      className="side-panel users-panel tour-users-panel" 
-      style={{ 
-        display: "flex", 
-        flexDirection: "column", 
-        height: "100%", 
-        overflow: "hidden", 
-        background: "transparent", 
+    <aside
+      className="side-panel users-panel tour-users-panel"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        background: "transparent",
         borderRight: "1px solid var(--glass-border)",
         borderRadius: "12px"
       }}
     >
       {/* --- USERS SECTION --- */}
-      <div 
-        className="section-title" 
-        style={{ 
-          padding: "8px 12px 4px", 
-          display: "flex", 
-          alignItems: "center", 
-          gap: "8px", 
+      <div
+        className="section-title"
+        style={{
+          padding: "8px 12px 4px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
           borderBottom: "1px solid rgba(255,255,255,0.03)",
           flexShrink: 0
         }}
@@ -123,14 +153,14 @@ export function UsersPanel({
         </span>
       </div>
 
-      <div 
-        className="users-list" 
-        style={{ 
-          padding: "6px 8px", 
-          display: "flex", 
-          flexDirection: "column", 
-          gap: "4px", 
-          flex: 1, 
+      <div
+        className="users-list"
+        style={{
+          padding: "6px 8px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          flex: 1,
           overflowY: "auto",
           minHeight: 0
         }}
@@ -151,8 +181,8 @@ export function UsersPanel({
           >
             {/* Absolute positioned User Role Menu Toggle Button for Host */}
             {permissions.isHost && user.role !== "Host" && (
-              <div 
-                className="user-menu-wrap" 
+              <div
+                className="user-menu-wrap"
                 onClick={e => e.stopPropagation()}
                 style={{
                   position: "absolute",
@@ -164,11 +194,11 @@ export function UsersPanel({
                 <button
                   type="button"
                   onClick={() => setOpenMenuFor((current) => current === user.socketId ? null : user.socketId)}
-                  style={{ 
-                    padding: "4px", 
-                    background: "none", 
-                    border: "none", 
-                    color: "rgba(255,255,255,0.4)", 
+                  style={{
+                    padding: "4px",
+                    background: "none",
+                    border: "none",
+                    color: "rgba(255,255,255,0.4)",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
@@ -255,15 +285,15 @@ export function UsersPanel({
                 ) : (
                   <span
                     className="avatar"
-                    style={{ 
-                      width: "48px", 
-                      height: "48px", 
-                      borderRadius: "12px", 
-                      background: user.color || (user.role === "Host" ? "#ffb000" : "#8b5cf6"), 
-                      display: "grid", 
-                      placeItems: "center", 
-                      fontSize: "18px", 
-                      fontWeight: "bold", 
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background: user.color || (user.role === "Host" ? "#ffb000" : "#8b5cf6"),
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: "18px",
+                      fontWeight: "bold",
                       color: "#fff"
                     }}
                   >
@@ -328,7 +358,7 @@ export function UsersPanel({
                   </p>
                 </div>
                 {user.userId && user.socketId !== permissions.me?.socketId && (
-                  <button 
+                  <button
                     style={{
                       background: "rgba(239, 68, 68, 0.1)",
                       border: "1px solid rgba(239, 68, 68, 0.2)",
@@ -348,8 +378,8 @@ export function UsersPanel({
                       fetch(API_URL + "/api/feedback", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ 
-                          type: "report", 
+                        body: JSON.stringify({
+                          type: "report",
                           message: `User Abuse Report`,
                           reportedId: user.userId || user.socketId,
                           reportedName: user.name,
@@ -371,13 +401,13 @@ export function UsersPanel({
       {/* --- ONLINE FRIENDS SECTION --- */}
       {currentUser && (
         <>
-          <div 
-            className="section-title" 
-            style={{ 
-              padding: "8px 12px 4px", 
-              display: "flex", 
-              alignItems: "center", 
-              gap: "8px", 
+          <div
+            className="section-title"
+            style={{
+              padding: "8px 12px 4px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
               borderBottom: "1px solid rgba(255,255,255,0.03)",
               borderTop: "1px solid rgba(255,255,255,0.03)",
               flexShrink: 0
@@ -388,14 +418,14 @@ export function UsersPanel({
             </span>
           </div>
 
-          <div 
-            className="friends-list" 
-            style={{ 
-              padding: "6px 8px", 
-              display: "flex", 
-              flexDirection: "column", 
-              gap: "4px", 
-              maxHeight: "150px", 
+          <div
+            className="friends-list"
+            style={{
+              padding: "6px 8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              maxHeight: "150px",
               overflowY: "auto",
               flexShrink: 0,
               marginBottom: "16px"
@@ -461,15 +491,15 @@ export function UsersPanel({
       )}
 
       {/* --- PUBLIC ROOM PERMISSIONS CARD --- */}
-      <div 
-        style={{ 
-          margin: "0 16px 16px", 
-          padding: "16px", 
-          border: "1px solid rgba(var(--primary-rgb), 0.4)", 
-          background: "transparent", 
-          borderRadius: "12px", 
-          display: "flex", 
-          flexDirection: "column", 
+      <div
+        style={{
+          margin: "0 16px 16px",
+          padding: "16px",
+          border: "1px solid rgba(var(--primary-rgb), 0.4)",
+          background: "transparent",
+          borderRadius: "12px",
+          display: "flex",
+          flexDirection: "column",
           gap: "8px",
           flexShrink: 0
         }}

@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Users, StickyNote, Info, Settings, MessageSquare, ArrowLeft, FileCode2, Target, PanelLeftClose, PanelLeftOpen, Monitor, Timer, Square, LogOut, Lock, Unlock, Copy, TerminalSquare } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Mic, MicOff, Users, StickyNote, Info, Settings, ArrowLeft, FileCode2, Target, PanelLeftClose, PanelLeftOpen, Monitor, TerminalSquare } from 'lucide-react';
 
-export function LeftNavBar({ 
+export function LeftNavBar({
   activeTab,
-  micOn, 
-  onToggleMic, 
+  micOn,
+  onToggleMic,
   onLeave,
-  onEndRoom,
   onShowFiles,
   onShowProblem,
   onShowUsers,
@@ -18,13 +16,9 @@ export function LeftNavBar({
   onToggleConsole,
   onShowInfo,
   onShowSettings,
-  room,
-  users,
-  permissions,
-  actions,
   isAnyMicOn
 }) {
-  const navigate = useNavigate();
+
   const [isExpanded, setIsExpanded] = useState(!activeTab);
 
   useEffect(() => {
@@ -71,9 +65,9 @@ export function LeftNavBar({
           <div className="icon-wrapper"><Target size={20} /></div>
           <span>Problem</span>
         </button>
-        <button 
-          className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} 
-          onClick={onShowUsers} 
+        <button
+          className={`nav-item ${activeTab === 'users' ? 'active' : ''}`}
+          onClick={onShowUsers}
           title="Users"
           style={isAnyMicOn ? {
             boxShadow: "0 0 15px rgba(80, 250, 123, 0.4)",
@@ -105,7 +99,7 @@ export function LeftNavBar({
           <Info size={20} />
           <span>Info</span>
         </button>
-        
+
         <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={onShowSettings} title="Settings">
           <div className="icon-wrapper"><Settings size={20} /></div>
           <span>Settings</span>

@@ -4,18 +4,21 @@ import { Server } from "socket.io";
 import { WebSocketServer } from "ws";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
-const { setupWSConnection, setPersistence } = require('./y-websocket-utils.cjs');
+const { setupWSConnection, setPersistence, docs } = require('./y-websocket-utils.cjs');
 import { createApp } from "./app.js";
 import { allowedOrigins } from "./config/cors.js";
-import { defaultFiles } from "./data/defaultFiles.js";
+import { assertStartupEnv } from "./config/envValidation.js";
+
 import { RoomRepository } from "./repositories/roomRepository.js";
 import { RoomService } from "./services/roomService.js";
 import { registerCollaborationSocket } from "./sockets/collaborationSocket.js";
 import { initializeEmotionsInFirestore } from "./services/emotionService.js";
+import { setRealtimeIO } from "./utils/realtimeEvents.js";
 
 import { createProfileController } from "./controllers/profileController.js";
 
 const port = Number(process.env.PORT || 5000);
+const startupEnv = assertStartupEnv();
 
 const roomRepository = new RoomRepository([]);
 await roomRepository.load();
@@ -23,9 +26,10 @@ const roomService = new RoomService(roomRepository);
 const profileController = createProfileController();
 const broadcastRooms = () => io.emit("rooms:update", roomRepository.allPublicSummaries((room) => roomService.publicRoom(room)));
 
-const app = createApp({ roomRepository, roomService, profileController, onRoomCreated: () => broadcastRooms() });
+const app = createApp({ roomRepository, roomService, profileController, onRoomCreated: () => broadcastRooms(), collabDocs: docs });
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: allowedOrigins(), methods: ["GET", "POST"] } });
+setRealtimeIO(io);
 
 // Bind Yjs persistence directly to the backend database
 setPersistence({
@@ -67,7 +71,7 @@ setPersistence({
       });
     }
   },
-  writeState: async (docName, ydoc) => {}
+  writeState: async (_docName, _ydoc) => {}
 });
 
 // Attach Yjs WebSocket server
@@ -92,6 +96,9 @@ await initializeEmotionsInFirestore();
 
 server.listen(port, () => {
   console.log(`Codefora API listening on http://localhost:${port}`);
+  if (startupEnv.strict) {
+    console.log("Production startup validation passed.");
+  }
   
   // Run zombie room cleanup every minute
   setInterval(() => {

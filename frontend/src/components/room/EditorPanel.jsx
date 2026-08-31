@@ -1,11 +1,11 @@
 import Editor, { useMonaco } from "@monaco-editor/react";
-import { Activity, Download, FileCode2, Plus, Upload, X, CheckCircle2, Save, AlignLeft, MoreHorizontal, Play, Send } from "lucide-react";
+import { } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "../../hooks/useTheme";
 import { socket } from "../../lib/socket";
 import { API_URL } from "../../config";
-import JSZip from "jszip";
+import "jszip";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import { MonacoBinding } from "y-monaco";
@@ -44,7 +44,7 @@ export const BOILERPLATES = {
   css: "/* write your css here */\nbody {\n    margin: 0;\n    padding: 0;\n    font-family: sans-serif;\n}"
 };
 
-export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeName, setActiveName, users, typing, typingCursors, permissions, onChange, onUpdateFileCode, onCreateFile, onExpectActiveName, onDeleteFile, onChangeLanguage, onSaveWork }) {
+export function EditorPanel({ roomId, allowCopyPaste, activeFile, users, typingCursors, permissions, onChange, onUpdateFileCode, onChangeLanguage, onRun, onSubmit, isRunningCode = false, isSubmittingCode = false, canSubmit = false }) {
   const [languageCache, setLanguageCache] = useState({});
   const [editorInstance, setEditorInstance] = useState(null);
   const [portalTarget, setPortalTarget] = useState(null);
@@ -53,7 +53,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
   const editorDisposables = useRef([]);
   const activeFileNameRef = useRef(activeFile?.name);
   const typingCursorsRef = useRef(typingCursors);
-  const isRemoteUpdate = useRef(false);
+
   const allowCopyPasteRef = useRef(allowCopyPaste);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
     if (!monaco || !editorInstance || !activeFile?.language) return;
     const model = editorInstance.getModel();
     if (!model) return;
-    
+
     const currentLang = model.getLanguageId();
     if (currentLang !== activeFile.language) {
       monaco.editor.setModelLanguage(model, activeFile.language);
@@ -81,7 +81,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
 
 
 
-  const otherUsers = users.filter((user) => user.socketId !== socket.id);
+
 
   const yjsRefs = useRef({ doc: null, provider: null, binding: null, saveTimeout: null, boundFile: null });
   const seededFilesRef = useRef(new Set());
@@ -104,7 +104,9 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
         yjsRefs.current.provider.destroy();
         try {
           yjsRefs.current.binding.destroy();
-        } catch (error) {}
+        } catch {
+          // Ignore teardown failures from already-destroyed bindings.
+        }
         yjsRefs.current.doc.destroy();
         clearTimeout(yjsRefs.current.saveTimeout);
       }
@@ -120,8 +122,8 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
       const model = editorInstance.getModel();
       if (!model) return;
 
-      // CRITICAL FIX: Monaco defaults to CRLF (\r\n) on Windows. 
-      // y-monaco maps strictly by string length. If Y.Text uses \n but Monaco uses \r\n, 
+      // CRITICAL FIX: Monaco defaults to CRLF (\r\n) on Windows.
+      // y-monaco maps strictly by string length. If Y.Text uses \n but Monaco uses \r\n,
       // indices will drift and text will insert on the wrong lines for other users!
       // Forcing LF (0) eliminates this exact desync issue.
       model.setEOL(0);
@@ -167,11 +169,17 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
 
       const handleSync = (isSynced) => {
         if (!isSynced || yjsRefs.current.boundFile !== activeFile.name || yjsRefs.current.binding) return;
-        
-        // If the server's document is empty, seed it with the database's code so it doesn't wipe the editor
-        if (type.length === 0 && model.getValue() && !seededFilesRef.current.has(activeFile.name)) {
-          seededFilesRef.current.add(activeFile.name);
-          type.insert(0, model.getValue());
+
+        // Seed from the room database snapshot once per room/file. This keeps
+        // resumed rooms from being replaced by a stale/default Yjs document.
+        // Do not seed from Monaco's cached model; the same filename can exist in
+        // different rooms, and Monaco keeps models alive by path.
+        const seedCode = activeFile.code ?? "";
+        const seedKey = `${roomId}:${activeFile.name}`;
+        if (!seededFilesRef.current.has(seedKey) && type.toString() !== seedCode) {
+          seededFilesRef.current.add(seedKey);
+          type.delete(0, type.length);
+          type.insert(0, seedCode);
         }
 
         yjsRefs.current.binding = new MonacoBinding(type, model, new Set([editorInstance]), provider.awareness);
@@ -238,7 +246,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
       window.removeEventListener("beforeunload", handleBeforeUnload);
       disposables.forEach((disposable) => disposable.dispose());
       if (modelChangeDisposable) modelChangeDisposable.dispose();
-      
+
       if (yjsRefs.current.provider) {
         // Flush any pending text to React state before destroying the Yjs connection
         // We MUST use onUpdateFileCode with the exact boundFile, otherwise rapidly switching tabs
@@ -246,13 +254,13 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
         if (yjsRefs.current.saveTimeout && onUpdateFileCodeRef.current && yjsRefs.current.boundFile) {
           onUpdateFileCodeRef.current(yjsRefs.current.boundFile, yjsRefs.current.doc.getText("monaco").toString());
         }
-        
+
         // Delay provider destruction to allow pending Yjs WebRTC/WebSocket messages to flush to the server
         const p = yjsRefs.current.provider;
         const b = yjsRefs.current.binding;
         const d = yjsRefs.current.doc;
-        
-        // IMPORTANT: Clear the refs instantly so that if the user rapidly switches tabs, 
+
+        // IMPORTANT: Clear the refs instantly so that if the user rapidly switches tabs,
         // the NEW tab doesn't accidentally instantly assassinate this OLD provider before it flushes!
         yjsRefs.current.provider = null;
         yjsRefs.current.binding = null;
@@ -271,7 +279,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
         } catch (error) {
           console.warn("Binding cleanup warning:", error);
         }
-        
+
         setTimeout(() => {
           try {
             p.destroy();
@@ -280,18 +288,38 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
             console.warn("Provider cleanup warning:", error);
           }
         }, 1500);
-        
+
         yjsRefs.current = { doc: null, provider: null, binding: null, saveTimeout: null, boundFile: null };
       }
     };
   }, [editorInstance, activeFile?.name, roomId]);
+
+  useEffect(() => {
+    if (!roomId) return;
+    window.__codeforaRoomEditors = window.__codeforaRoomEditors || {};
+    window.__codeforaRoomEditors[roomId] = () => {
+      const boundFile = yjsRefs.current.boundFile || activeFileNameRef.current || activeFile?.name;
+      const yText = yjsRefs.current.doc?.getText("monaco")?.toString();
+      const editorText = editorInstance?.getValue?.();
+      return {
+        fileName: boundFile,
+        code: editorText !== undefined ? editorText : yText
+      };
+    };
+
+    return () => {
+      if (window.__codeforaRoomEditors?.[roomId]) {
+        delete window.__codeforaRoomEditors[roomId];
+      }
+    };
+  }, [roomId, editorInstance, activeFile?.name]);
 
   // Keep awareness up to date without destroying the connection
   useEffect(() => {
     if (!yjsRefs.current.provider) return;
     const currentUser = users.find(u => u.socketId === socket.id);
     const color = currentUser?.color || (currentUser?.role === "Host" ? "#ffb000" : "#8b5cf6");
-    
+
     yjsRefs.current.provider.awareness.setLocalStateField('user', {
       name: currentUser?.name || 'Anonymous',
       color: color
@@ -306,9 +334,9 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
         if (state.user && state.user.color) {
           css += `
             .yRemoteSelection-${clientId} { background-color: ${state.user.color}33 !important; }
-            .yRemoteSelectionHead-${clientId} { 
-              border-left-color: ${state.user.color} !important; 
-              box-shadow: 0 0 8px ${state.user.color}, 0 0 16px ${state.user.color} !important; 
+            .yRemoteSelectionHead-${clientId} {
+              border-left-color: ${state.user.color} !important;
+              box-shadow: 0 0 8px ${state.user.color}, 0 0 16px ${state.user.color} !important;
             }
           `;
         }
@@ -360,10 +388,10 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
             const lang = event.target.value;
             if (onChangeLanguage && activeFile) {
               const baseName = activeFile.name.includes(".") ? activeFile.name.substring(0, activeFile.name.lastIndexOf(".")) : activeFile.name;
-              
+
               const cachedCode = languageCache[baseName]?.[lang];
               const newCode = cachedCode !== undefined ? cachedCode : (BOILERPLATES[lang] || "");
-              
+
               setLanguageCache(prev => ({
                 ...prev,
                 [baseName]: {
@@ -371,7 +399,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
                   [activeFile.language]: activeFile.code
                 }
               }));
-              
+
               onChangeLanguage(activeFile.name, lang, newCode);
             }
           }}
@@ -396,7 +424,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
         portalTarget
       )}
 
-      <div 
+      <div
         className="editor-wrap tour-code-editor"
         onKeyDownCapture={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -415,7 +443,8 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
           height="100%"
           theme={theme === "dark" ? "vs-dark" : "light"}
           language={activeFile?.language || "javascript"}
-          path={activeFile?.name || "main.js"}
+          path={`${roomId || "room"}/${activeFile?.name || "main.js"}`}
+          defaultValue={activeFile?.code || ""}
           onMount={(editor) => {
             setEditorInstance(editor);
             editor.onKeyDown((e) => {
@@ -428,7 +457,7 @@ export function EditorPanel({ roomId, allowCopyPaste, files, activeFile, activeN
               }
             });
           }}
-          onChange={(value) => {
+          onChange={() => {
             // Yjs handles the sync. We don't manually emit on every stroke here.
           }}
           options={{

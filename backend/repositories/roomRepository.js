@@ -1,15 +1,18 @@
 import { createFirestore } from "../config/firebase.js";
 import fs from "fs/promises";
 import path from "path";
-import { fileURLToPath } from "url";
+import { runtimeDataPath } from "../utils/runtimeDataPath.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const localRoomsPath = path.join(__dirname, "../data/rooms.json");
+const localRoomsPath = runtimeDataPath("rooms.json");
 
 export class RoomRepository {
   constructor(seedRooms) {
     this.firestore = createFirestore();
     this.rooms = new Map(seedRooms.map((room) => [room.id, room]));
+  }
+
+  storageMode() {
+    return this.firestore && !this.firestore.isMock ? "firestore" : "local-json";
   }
 
   markActive(id) {
@@ -21,7 +24,7 @@ export class RoomRepository {
     const now = Date.now();
     const zombieRooms = [];
     for (const [id, room] of this.rooms.entries()) {
-      if (room.users && room.users.length === 0) {
+      if (!room.project && room.users && room.users.length === 0) {
         if (now - (room.lastActivityAt || room.updatedAt || room.createdAt || now) > 5 * 60 * 1000) {
           zombieRooms.push(id);
         }
@@ -35,7 +38,7 @@ export class RoomRepository {
   }
 
   async load() {
-    if (!this.firestore) {
+    if (!this.firestore || this.firestore.isMock) {
       const localRooms = await this.readLocalRooms();
       if (localRooms.length) {
         this.rooms = new Map(localRooms.map((room) => [room.id, { ...room, users: [] }]));
@@ -63,7 +66,7 @@ export class RoomRepository {
   }
 
   listPublic() {
-    return [...this.rooms.values()].filter((room) => room.visibility === "public");
+    return [...this.rooms.values()].filter((room) => room.visibility === "public" && room.project?.status !== "completed");
   }
 
   listAll() {
@@ -92,7 +95,7 @@ export class RoomRepository {
   async fetchById(id) {
     const memRoom = this.findById(id);
     if (memRoom) return memRoom;
-    if (!this.firestore) return undefined;
+    if (!this.firestore || this.firestore.isMock) return undefined;
     const doc = await this.firestore.collection("rooms").doc(String(id || "").trim()).get();
     if (doc.exists) {
       const data = doc.data();
@@ -108,7 +111,7 @@ export class RoomRepository {
     if (!normalized) return undefined;
     const memRoom = this.findByInviteCode(inviteCode);
     if (memRoom) return memRoom;
-    if (!this.firestore) return undefined;
+    if (!this.firestore || this.firestore.isMock) return undefined;
     const snapshot = await this.firestore.collection("rooms").where("inviteCode", "==", normalized).limit(1).get();
     if (!snapshot.empty) {
       const doc = snapshot.docs[0];
@@ -123,15 +126,15 @@ export class RoomRepository {
   async save(room) {
     let trimmedName = room.name?.trim() || "Untitled Lab";
     const duplicate = this.findByName(trimmedName);
-    if (duplicate && duplicate.id !== room.id) {
+    if (duplicate && duplicate.id !== room.id && !room.sourceWorkId) {
       throw new Error("Room name is already taken.");
     }
     room.name = trimmedName;
     room.updatedAt = Date.now();
 
     this.rooms.set(room.id, room);
-    const { users, ...persisted } = room;
-    if (!this.firestore) {
+    const {  ...persisted } = room;
+    if (!this.firestore || this.firestore.isMock) {
       await this.writeLocalRooms();
       return;
     }
@@ -140,7 +143,7 @@ export class RoomRepository {
 
   async delete(id) {
     this.rooms.delete(id);
-    if (!this.firestore) {
+    if (!this.firestore || this.firestore.isMock) {
       await this.writeLocalRooms();
       return;
     }
@@ -158,7 +161,7 @@ export class RoomRepository {
 
   async writeLocalRooms() {
     const rooms = [...this.rooms.values()].map((room) => {
-      const { users, ...persisted } = room;
+      const {  ...persisted } = room;
       return persisted;
     });
     await fs.mkdir(path.dirname(localRoomsPath), { recursive: true });

@@ -1,31 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, useBlocker, useLocation } from "react-router-dom";
-import { Loader2, AlertTriangle, MessageSquare, X as XIcon, ArrowLeft, PanelLeftClose } from "lucide-react";
+import { Loader2, AlertTriangle, MessageSquare, X, X as XIcon, ArrowLeft, PanelLeftClose } from "lucide-react";
 import { useRoomSession } from "../hooks/useRoomSession";
 import { TopBar } from "../components/room/TopBar";
 import { EditorPanel } from "../components/room/EditorPanel";
 import { InfoModal } from "../components/room/InfoModal";
-import { Navbar } from "../components/Navbar";
+
 import { UsersPanel } from "../components/room/UsersPanel";
 import { CommsPanel } from "../components/room/CommsPanel";
 import { ConsolePanel } from "../components/room/ConsolePanel";
-import { FloatingProblem } from "../components/room/FloatingProblem";
+
 import { ProblemPanel } from "../components/room/ProblemPanel";
 import { FilesPanel } from "../components/room/FilesPanel";
 import { NotesModal } from "../components/room/NotesModal";
 import { copyToClipboard } from "../lib/clipboard";
 import { TimeTravelModal } from "../components/room/TimeTravelModal";
 import { LeftNavBar } from "../components/room/LeftNavBar";
-import { FooterBar } from "../components/room/FooterBar";
+
 import { SettingsPanel } from "../components/room/SettingsPanel";
 import { WebPreviewFull } from "../components/room/WebPreviewFull";
 import { problems } from "../data/problems";
 import { getUsername, saveUsername } from "../lib/navigation";
 import { useAuth } from "../hooks/useAuth";
+import { isGuestUser } from "../lib/userAccess";
 import { api } from "../api/client";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
 import { TargetViewer } from "../components/room/TargetViewer";
 import { ScoreModal } from "../components/room/ScoreModal";
+import { LoginRequiredModal } from "../components/LoginRequiredModal";
 
 export function RoomPage() {
   const { roomId } = useParams();
@@ -34,17 +36,22 @@ export function RoomPage() {
   const { user } = useAuth();
   function generateGuestName() { return `Guest-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
   const initialName = getUsername() || user?.displayName || user?.email?.split("@")[0] || generateGuestName();
-  const [joinName, setJoinName] = useState(() => initialName);
-  const [joinNameError, setJoinNameError] = useState("");
+  const [joinName] = useState(() => initialName);
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [feedbackType, setFeedbackType] = useState('general');
   const infoShownRef = useRef(false);
   const [activeCommsTab, setActiveCommsTab] = useState("chat");
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
   const [showTimeTravel, setShowTimeTravel] = useState(false);
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState("editor"); // "editor", "preview", "notes"
+  const [projectState, setProjectState] = useState(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectNotice, setProjectNotice] = useState("");
+  const [showEndProjectPrompt, setShowEndProjectPrompt] = useState(false);
+  const [showLoginRequired, setShowLoginRequired] = useState(false);
+  const [showUnsavedProjectPrompt, setShowUnsavedProjectPrompt] = useState(false);
+  const [savingBeforeLeave, setSavingBeforeLeave] = useState(false);
+  const savedProjectSnapshotRef = useRef("");
 
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -86,7 +93,6 @@ export function RoomPage() {
     history,
     typing,
     typingCursors,
-    suggestion,
     aiThinking,
     micOn,
     audioHost,
@@ -96,38 +102,151 @@ export function RoomPage() {
     preview,
     compiler,
     actions
-  } = useRoomSession(roomId, joinName, user?.uid, isBypassingBlocker);
+  } = useRoomSession(roomId, joinName, user?.uid, isBypassingBlocker, isGuestUser(user));
 
   const isChallenge = room?.isChallenge || location.state?.challengeMode;
   const targetImage = room?.targetImage || location.state?.targetImage;
+  const challengeId = room?.challengeId || location.state?.challengeId;
   const difficulty = location.state?.difficulty || 'easy';
   const [isScoring, setIsScoring] = useState(false);
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
   const [scoreData, setScoreData] = useState(null);
 
+  useEffect(() => {
+    setProjectState(room?.project || null);
+  }, [room?.project]);
+
+  useEffect(() => {
+    if (!projectNotice) return undefined;
+    const timer = window.setTimeout(() => setProjectNotice(""), 3000);
+    return () => window.clearTimeout(timer);
+  }, [projectNotice]);
+
+  const isProjectOwner = Boolean(
+    user?.uid
+      && !isGuestUser(user)
+      && user.uid === (projectState?.ownerId || room?.ownerUserId),
+  );
+  const hasActiveRoomProject = projectState?.status === "active";
+  const canSaveWorkToAccount = Boolean(user?.uid && !isGuestUser(user));
+  const isResumedProjectRoom = Boolean(location.state?.resumedProjectId || location.state?.skipRoomGuide);
+
+  const getProjectSnapshot = (snapshotFiles = files, snapshotNotes = notes) => JSON.stringify({
+    files: (snapshotFiles || []).map((file) => ({
+      name: file.name,
+      language: file.language,
+      code: file.code || ""
+    })),
+    notes: snapshotNotes || { text: "", draws: [] },
+    activeFile: activeFile?.name || activeName || null
+  });
+
+  const getCurrentProjectSnapshot = () => {
+    const snapshotFiles = actions.snapshotFilesWithLiveEditor?.() || files;
+    return getProjectSnapshot(snapshotFiles, notes);
+  };
+
+  const hasUnsavedResumedProjectChanges = () => (
+    isResumedProjectRoom
+    && hasActiveRoomProject
+    && isProjectOwner
+    && savedProjectSnapshotRef.current
+    && savedProjectSnapshotRef.current !== getCurrentProjectSnapshot()
+  );
+
+  useEffect(() => {
+    if (!isResumedProjectRoom || !room?.id || !files.length) return;
+    savedProjectSnapshotRef.current = getProjectSnapshot(files, notes);
+  }, [isResumedProjectRoom, room?.id, files.length]);
+
+  const handleSaveWork = async (name) => {
+    if (!canSaveWorkToAccount) {
+      setShowLoginRequired(true);
+      return { success: false, authRequired: true, error: "Please login to save your work." };
+    }
+
+    return actions.saveWork(name);
+  };
+
+  const handleSaveProject = async () => {
+    if (!isProjectOwner) return false;
+    setProjectBusy(true);
+    setProjectNotice("");
+    try {
+      const snapshotFiles = actions.snapshotFilesWithLiveEditor?.() || files;
+      const response = await api.saveRoomProject(resolvedRoomId, {
+        title: room?.name || projectState?.title,
+        activeFile: activeFile?.name || activeName,
+        files: snapshotFiles,
+        notes,
+      });
+      setProjectState(response.project);
+      savedProjectSnapshotRef.current = getProjectSnapshot(snapshotFiles, notes);
+      setProjectNotice("Project checkpoint saved to your profile");
+      return true;
+    } catch (error) {
+      setProjectNotice(error.message || "Could not save this project");
+      return false;
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const handleEndProject = async () => {
+    if (!isProjectOwner) return;
+    setProjectBusy(true);
+    setProjectNotice("");
+    try {
+      const response = await api.endRoomProject(resolvedRoomId, {
+        title: room?.name || projectState?.title,
+        activeFile: activeFile?.name || activeName,
+        files: actions.snapshotFilesWithLiveEditor?.() || files,
+        notes,
+      });
+      setProjectState(response.project);
+      actions.endCompletedProject();
+    } catch (error) {
+      setProjectNotice(error.message || "Could not end this project");
+    } finally {
+      setProjectBusy(false);
+      setShowEndProjectPrompt(false);
+    }
+  };
+
   const handleGenerateNewChallenge = async () => {
     setIsGeneratingChallenge(true);
+    setProjectNotice("");
     try {
       const targetPayload = await api.request("/api/challenge/generate", {
         method: "POST",
         body: JSON.stringify({ difficulty })
       });
-      if (targetPayload.targetImage) {
-        actions.setProblem("ui-battle", targetPayload.targetImage);
+      if (targetPayload.targetImage && targetPayload.challengeId) {
+        actions.setProblem("ui-battle", targetPayload.targetImage, targetPayload.challengeId);
       }
     } catch (err) {
-      alert("Failed to generate new challenge: " + err.message);
+      setProjectNotice(`Failed to generate a new challenge: ${err.message || "renderer unavailable"}`);
     } finally {
       setIsGeneratingChallenge(false);
     }
   };
 
   const handleChallengeSubmit = async () => {
+    if (!targetImage || !challengeId) {
+      setProjectNotice("Challenge target is still loading. Try again in a moment.");
+      return;
+    }
+
     setIsScoring(true);
+    setProjectNotice("");
     try {
-      const htmlFile = files.find(f => f.name.endsWith('.html'));
-      const cssFile = files.find(f => f.name.endsWith('.css'));
+      const currentFiles = actions.snapshotFilesWithLiveEditor?.() || files;
+      const htmlFile = currentFiles.find(f => f.name.endsWith('.html'));
+      const cssFile = currentFiles.find(f => f.name.endsWith('.css'));
       let userCode = htmlFile?.code || '';
+      if (!userCode.trim()) {
+        throw new Error("Add some HTML before submitting the challenge.");
+      }
       if (cssFile?.code) {
         if (userCode.includes('</head>')) {
           userCode = userCode.replace('</head>', `<style>${cssFile.code}</style></head>`);
@@ -138,11 +257,12 @@ export function RoomPage() {
 
       const data = await api.request("/api/challenge/submit", {
         method: 'POST',
-        body: JSON.stringify({ userCode, targetImage })
+        body: JSON.stringify({ userCode, challengeId })
       });
       setScoreData(data);
     } catch (err) {
       console.error(err);
+      setProjectNotice(err.message || "Could not score this challenge. Please try again.");
     } finally {
       setIsScoring(false);
     }
@@ -201,7 +321,9 @@ export function RoomPage() {
           gainNode.connect(audioContext.destination);
           oscillator.start(audioContext.currentTime);
           oscillator.stop(audioContext.currentTime + 0.3);
-        } catch(e) {}
+        } catch {
+          // Ignore notification sound failures.
+        }
         
         const id = Date.now() + Math.random();
         setFloatingMsgs(prev => [...prev, { floatId: id, user: "System", text: `${nu.name} joined the room`, isSystem: true }]);
@@ -219,19 +341,38 @@ export function RoomPage() {
   const usersModalDragStart = useRef({ x: 0, y: 0, initialX: 0, initialY: 0 });
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      !isBypassingBlocker.current && !showLeavePrompt && currentLocation.pathname !== nextLocation.pathname
+      !isBypassingBlocker.current
+      && !showLeavePrompt
+      && !showUnsavedProjectPrompt
+      && currentLocation.pathname !== nextLocation.pathname
   );
 
   useEffect(() => {
     if (blocker.state === "blocked") {
-      setShowLeavePrompt(true);
+      if (hasUnsavedResumedProjectChanges()) {
+        setShowUnsavedProjectPrompt(true);
+      } else {
+        setShowLeavePrompt(true);
+      }
     }
   }, [blocker]);
 
+  useEffect(() => {
+    if (!isResumedProjectRoom) return undefined;
+    const handleBeforeUnload = (event) => {
+      if (!hasUnsavedResumedProjectChanges()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  });
+
   const confirmLeave = () => {
     setShowLeavePrompt(false);
+    setShowUnsavedProjectPrompt(false);
     isBypassingBlocker.current = true;
-    if (permissions.isHost) {
+    if (permissions.isHost && !hasActiveRoomProject) {
       actions.endRoom(true);
     }
     const feedbackUrl = `/rooms?feedback=true&username=${encodeURIComponent(joinName)}`;
@@ -246,13 +387,27 @@ export function RoomPage() {
 
   const cancelLeave = () => {
     setShowLeavePrompt(false);
+    setShowUnsavedProjectPrompt(false);
     if (blocker.state === "blocked") {
       blocker.reset();
     }
   };
 
   const handleLeaveRequest = () => {
-    setShowLeavePrompt(true);
+    if (hasUnsavedResumedProjectChanges()) {
+      setShowUnsavedProjectPrompt(true);
+    } else {
+      setShowLeavePrompt(true);
+    }
+  };
+
+  const saveProjectAndLeave = async () => {
+    setSavingBeforeLeave(true);
+    const saved = await handleSaveProject();
+    setSavingBeforeLeave(false);
+    if (saved) {
+      confirmLeave();
+    }
   };
   
 
@@ -415,16 +570,31 @@ export function RoomPage() {
 
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
+      const modifierKey = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
       // Ctrl + ` -> Run Code
-      if (e.ctrlKey && e.key === '`') {
+      if (modifierKey && e.key === '`') {
         e.preventDefault();
         setConsoleMode("output");
         setIsConsoleOpen(true);
         actions.runCode(stdin);
         return;
       }
+
+      // Ctrl + Shift + Enter -> Submit Solution
+      if (modifierKey && e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (activeProblem) {
+          setIsConsoleOpen(true);
+          actions.submitCode(activeProblem);
+          setShowTimeTravel(true);
+        }
+        return;
+      }
+
       // Ctrl + Enter -> Submit Solution
-      if (e.ctrlKey && !e.shiftKey && e.key === 'Enter') {
+      if (modifierKey && !e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
         if (activeProblem) {
           setIsConsoleOpen(true);
@@ -433,44 +603,47 @@ export function RoomPage() {
         }
         return;
       }
-      // Ctrl + Shift + Enter -> Run All Test Cases
-      if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
-        e.preventDefault();
-        if (activeProblem) {
-          setIsConsoleOpen(true);
-          actions.submitCode(activeProblem);
-          setShowTimeTravel(true);
-        }
-        return;
-      }
-      // Ctrl + R -> Run Sample Test Cases
-      if (e.ctrlKey && e.key.toLowerCase() === 'r') {
+
+      // Ctrl + R -> Run Code
+      if (modifierKey && !e.shiftKey && key === 'r') {
         e.preventDefault();
         setConsoleMode("output");
         setIsConsoleOpen(true);
         actions.runCode(stdin);
         return;
       }
-      // Ctrl + S -> Save Code
-      if (e.ctrlKey && e.key.toLowerCase() === 's') {
+
+      // Ctrl + Shift + S -> Save a room project checkpoint
+      if (modifierKey && e.shiftKey && key === 's') {
         e.preventDefault();
-        if (actions.saveWork) actions.saveWork(`Project in ${room?.id || roomId}`);
+        handleSaveProject();
+        return;
+      }
+
+      // Ctrl + S -> save the current workspace through the active project flow when available.
+      if (modifierKey && !e.shiftKey && key === 's') {
+        e.preventDefault();
+        if (isProjectOwner && hasActiveRoomProject) {
+          handleSaveProject();
+        } else if (actions.saveWork) {
+          handleSaveWork(room?.name || `Project in ${room?.id || roomId}`);
+        }
         return;
       }
       // Ctrl + Shift + M -> Mute / Unmute Mic
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'm') {
+      if (modifierKey && e.shiftKey && key === 'm') {
         e.preventDefault();
         actions.toggleMic();
         return;
       }
       // Ctrl + Shift + V -> Join / Leave Voice Chat (proxy to leave room for now or toggle mic)
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'v') {
+      if (modifierKey && e.shiftKey && key === 'v') {
         e.preventDefault();
         handleLeaveRequest();
         return;
       }
       // Ctrl + Shift + C -> Copy Room Invite Link
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
+      if (modifierKey && e.shiftKey && key === 'c') {
         e.preventDefault();
         copyToClipboard(window.location.href).then(() => {
           alert("Invite link copied!");
@@ -483,14 +656,16 @@ export function RoomPage() {
 
     window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
-  }, [actions, activeProblem, stdin, room, roomId]);
+  }, [actions, activeProblem, stdin, room, roomId, isProjectOwner, hasActiveRoomProject, handleSaveProject, handleSaveWork]);
 
   useEffect(() => {
     if (room && !infoShownRef.current) {
-      setShowInfoModal(true);
+      if (!location.state?.skipRoomGuide) {
+        setShowInfoModal(true);
+      }
       infoShownRef.current = true;
     }
-  }, [room]);
+  }, [room, location.state?.skipRoomGuide]);
 
   if (!room && !joinError) {
     return (
@@ -573,7 +748,7 @@ export function RoomPage() {
       }}
       isRunningCode={compiler.isRunningCode}
       isSubmittingCode={compiler.isSubmittingCode || isScoring}
-      canSubmit={(!!activeProblem || isChallenge) && !compiler.isRunningCode && !compiler.isSubmittingCode}
+      canSubmit={permissions.canEdit && (!!activeProblem || isChallenge) && !compiler.isRunningCode && !compiler.isSubmittingCode}
       timer={timer}
       permissions={permissions}
       actions={actions}
@@ -581,11 +756,24 @@ export function RoomPage() {
       activeFile={activeFile}
       isSplitView={isSplitView}
       setIsSplitView={setIsSplitView}
+      project={projectState}
+      isProjectOwner={isProjectOwner}
+      projectBusy={projectBusy}
+      projectNotice={projectNotice}
+      onSaveProject={handleSaveProject}
+      onEndProject={() => setShowEndProjectPrompt(true)}
+      onSaveWork={isProjectOwner && hasActiveRoomProject ? null : handleSaveWork}
+      onLoginRequired={() => setShowLoginRequired(true)}
     />
   );
 
   return (
     <div className="room-layout-wrapper" style={{ display: 'flex', flexDirection: 'row', height: '100vh', overflow: 'hidden', backgroundImage: `linear-gradient(rgba(15, 23, 42, 0.3), rgba(15, 23, 42, 0.6)), url(${loopsbg})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
+      <LoginRequiredModal
+        open={showLoginRequired}
+        onClose={() => setShowLoginRequired(false)}
+        message="Please login to save your work."
+      />
       {(isResizing || isResizingUsers) && <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: isResizing ? 'row-resize' : 'col-resize' }} />}
       
       <LeftNavBar 
@@ -819,7 +1007,6 @@ export function RoomPage() {
                   onExpectActiveName={actions.setExpectedActiveName}
                   onDeleteFile={actions.deleteActiveFile}
                   onChangeLanguage={actions.changeFileLanguage}
-                  onSaveWork={actions.saveWork}
                 />
               </div>
             ) : activeSidebarTab === "settings" ? (
@@ -917,7 +1104,6 @@ export function RoomPage() {
                 onExpectActiveName={actions.setExpectedActiveName}
                 onDeleteFile={actions.deleteActiveFile}
                 onChangeLanguage={actions.changeFileLanguage}
-                onSaveWork={actions.saveWork}
                 onRun={() => {
                   if (activeFile && (activeFile.name.endsWith('.html') || activeFile.name.endsWith('.css'))) {
                     if (activeFile.name.endsWith('.html')) {
@@ -1110,6 +1296,26 @@ export function RoomPage() {
           <MessageSquare size={24} />
         </button>
 
+        {showUnsavedProjectPrompt && (
+          <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Save Project Before Leaving">
+            <div className="profile-modal-card">
+              <div className="profile-modal-header">
+                <h3>Save project before leaving?</h3>
+              </div>
+              <div className="profile-content" style={{ padding: "20px" }}>
+                <p>You have unsaved changes in this resumed project. Save the project if you want to keep your latest work.</p>
+              </div>
+              <div className="profile-modal-footer">
+                <button className="button secondary" onClick={cancelLeave} disabled={savingBeforeLeave || projectBusy}>Cancel</button>
+                <button className="button secondary" onClick={confirmLeave} disabled={savingBeforeLeave || projectBusy}>Leave without saving</button>
+                <button className="button primary" onClick={saveProjectAndLeave} disabled={savingBeforeLeave || projectBusy}>
+                  {savingBeforeLeave || projectBusy ? "Saving..." : "Save Project"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showLeavePrompt && (
           <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Leave Room Confirmation">
             <div className="profile-modal-card">
@@ -1117,15 +1323,34 @@ export function RoomPage() {
                 <h3>Leave Room?</h3>
               </div>
               <div className="profile-content" style={{ padding: "20px" }}>
-                {permissions.isHost ? (
+                {permissions.isHost && !hasActiveRoomProject ? (
                   <p>You are the <strong>Host</strong>. Leaving will instantly <strong>end the room</strong> for everyone else. Are you sure you want to leave?</p>
+                ) : hasActiveRoomProject && isProjectOwner ? (
+                  <p>Your project will remain active and can be resumed from your profile. Only <strong>End Project</strong> finalizes it for everyone.</p>
                 ) : (
                   <p>Are you sure you want to leave this room? You can rejoin later if you have the code.</p>
                 )}
               </div>
               <div className="profile-modal-footer">
                 <button className="button secondary" onClick={cancelLeave}>Cancel</button>
-                <button className="button danger" onClick={confirmLeave}>{permissions.isHost ? "End & Leave" : "Leave"}</button>
+                <button className="button danger" onClick={confirmLeave}>{permissions.isHost && !hasActiveRoomProject ? "End & Leave" : "Leave"}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showEndProjectPrompt && (
+          <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="End Project Confirmation">
+            <div className="profile-modal-card">
+              <div className="profile-modal-header">
+                <h3>End Project?</h3>
+              </div>
+              <div className="profile-content" style={{ padding: "20px" }}>
+                <p>Ending this project saves the current files as the final snapshot and locks it permanently. After this, nobody can edit it and it cannot be resumed.</p>
+              </div>
+              <div className="profile-modal-footer">
+                <button className="button secondary" onClick={() => setShowEndProjectPrompt(false)} disabled={projectBusy}>Cancel</button>
+                <button className="button danger" onClick={handleEndProject} disabled={projectBusy}>{projectBusy ? "Ending..." : "End Project"}</button>
               </div>
             </div>
           </div>

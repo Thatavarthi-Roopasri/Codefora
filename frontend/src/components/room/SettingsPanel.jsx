@@ -137,7 +137,7 @@ export function SettingsPanel({ room, users, timer, permissions, actions }) {
                   try {
                     await copyToClipboard(room.inviteCode);
                     alert("Invite code copied!");
-                  } catch (e) {
+                  } catch {
                     alert("Failed to copy invite code.");
                   }
                 }}

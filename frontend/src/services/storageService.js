@@ -4,11 +4,8 @@ import {
   saveUserProfile,
   getUserProfile,
   createRoom,
-  updateRoom,
-  getRoom,
   logActivity,
-  saveCodeFile,
-  getCodeFiles
+  saveCodeFile
 } from "../lib/firebase";
 
 /**

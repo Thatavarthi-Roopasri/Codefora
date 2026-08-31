@@ -2,6 +2,7 @@
   "name": "codefora",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "workspaces": [
     "frontend",
     "backend"
@@ -9,11 +10,24 @@
   "scripts": {
     "dev": "concurrently \"npm --workspace backend run dev\" \"npm --workspace frontend run dev -- --host 0.0.0.0\"",
     "build": "npm --workspace frontend run build",
+    "lint": "eslint \"scripts/**/*.mjs\" --max-warnings 9999 && npm run lint --workspaces --if-present",
+    "test": "npm --workspace backend test",
+    "test:backend": "npm --workspace backend test",
+    "test:e2e": "node scripts/e2e-smoke.mjs",
+    "test:mobile": "node scripts/mobile-smoke.mjs",
+    "backup:data": "node scripts/backup-local-data.mjs",
+    "verify:data-safe": "node scripts/check-runtime-data-not-staged.mjs",
+    "verify:production-env": "node scripts/verify-production-env.mjs",
+    "verify:real-firebase": "node scripts/verify-real-firebase.mjs",
+    "verify": "npm run lint && npm test && npm run build",
     "frontend": "npm --workspace frontend run dev",
     "backend": "npm --workspace backend run dev"
   },
   "devDependencies": {
-    "concurrently": "9.2.1"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "9.2.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0"
   },
   "dependencies": {
     "extend": "^3.0.2"

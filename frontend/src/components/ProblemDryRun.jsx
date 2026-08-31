@@ -77,8 +77,7 @@ const ProblemDryRun = ({ problem, onNext, onPrev, problemIndex, totalProblems })
   const timerRef = useRef(null);
 
   const { steps } = problem;
-  const hasCode = Boolean(problem.code);
-  const codeLines = hasCode ? problem.code.split('\n') : [];
+
   const totalSteps = steps?.length || 0;
   const currentStep = steps?.[stepIndex] || {};
   const pseudoCode = problem.pseudoCode || [];

@@ -185,7 +185,7 @@ const LinkedListViz = ({ nodes, newNode, pointers, highlights, success }) => {
   return (
     <svg width="800" height="400" className="w-full h-full">
       {/* Draw existing nodes */}
-      {nodes.map((n, idx) => {
+      {nodes.map((n) => {
         const { x, y } = positions[n.id];
         const isHighlight = highlights?.includes(n.id);
         const stroke = success && isHighlight ? "green" : "black";
@@ -300,7 +300,7 @@ const TreeViz = ({ nodes, boxes, pointers, highlights, success }) => {
       })}
 
       {/* Draw Pointers */}
-      {Object.entries(pointers).map(([label, nodeId], idx) => {
+      {Object.entries(pointers).map(([label, nodeId]) => {
         if (label === 'next') return null; // Skip 'next' action text
         const pos = positions[nodeId];
         if (!pos) return null;

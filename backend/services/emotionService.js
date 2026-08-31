@@ -4,12 +4,52 @@ import { fileURLToPath } from 'url';
 import { createFirestore } from '../config/firebase.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Emotions folder is at c:\Users\Roopa\Downloads\Codefora-main\codefora_emotions
-// Backend is at ...Codefora-main\Codefora-main\backend
-// So we go up 3 levels: services -> backend -> Codefora-main -> parent directory
 const emotionsDir = path.join(__dirname, '../../frontend/assets/codefora_emotions');
 const sidersDir = path.join(__dirname, '../../frontend/assets/emotions_siders');
 const loopsDir = path.join(__dirname, '../../frontend/assets/emotions_loops');
+const supportedExtensions = ['.webp', '.png', '.jpg', '.jpeg'];
+
+const toDisplayName = (fileName) => fileName
+  .replace(/\.(webp|png|jpg|jpeg)$/i, '')
+  .replace(/[_-]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .replace(/\b\w/g, (character) => character.toUpperCase());
+
+const getAvatarDetails = (category, fileName, index) => {
+  if (category === 'sider' || category === 'siders') {
+    const poseNumber = fileName.match(/\d+/)?.[0] || String(index + 1);
+    return { name: 'Sider', pose: `Pose ${poseNumber.padStart(2, '0')}` };
+  }
+
+  if (category === 'loop' || category === 'loops') {
+    return { name: 'Loop', pose: `Pose ${String(index + 1).padStart(2, '0')}` };
+  }
+
+  return { name: toDisplayName(fileName), pose: 'Emotion' };
+};
+
+const getContentType = (filePath) => {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.webp': return 'image/webp';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    default: return 'image/png';
+  }
+};
+
+const findEmotionFile = (targetDir, requestedFileName) => {
+  const fileName = path.basename(requestedFileName || '');
+  const extension = path.extname(fileName).toLowerCase();
+  const stem = extension ? fileName.slice(0, -extension.length) : fileName;
+  const candidates = [
+    path.join(targetDir, `${stem}.webp`),
+    path.join(targetDir, fileName),
+    ...supportedExtensions.map((candidateExtension) => path.join(targetDir, `${stem}${candidateExtension}`)),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+};
 
 // Get all emotion files
 export const getAllEmotions = async (catInput = 'general') => {
@@ -28,15 +68,17 @@ export const getAllEmotions = async (catInput = 'general') => {
 
     if (!fs.existsSync(targetDir)) return [];
 
-    const files = fs.readdirSync(targetDir);
+    const files = fs.readdirSync(targetDir)
+      .filter((file) => supportedExtensions.includes(path.extname(file).toLowerCase()))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const emotions = files
-      .filter((file) => file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg'))
-      .map((file) => {
+      .map((file, index) => {
         const id = prefix + file;
-        const name = file.replace(/\.(png|jpg|jpeg)$/, '').replace(/_/g, ' ');
+        const { name, pose } = getAvatarDetails(category, file, index);
         return {
           id,
-          name: name.startsWith('icon ') ? name : name.charAt(0).toUpperCase() + name.slice(1),
+          name,
+          pose,
           category,
           fileName: file,
         };
@@ -49,9 +91,9 @@ export const getAllEmotions = async (catInput = 'general') => {
 };
 
 // Get emotion file stream
-export const getEmotionFile = (emotionId) => {
+export const getEmotionFile = (emotionId = '') => {
   let targetDir = emotionsDir;
-  let fileName = emotionId;
+  let fileName;
 
   if (emotionId.startsWith('sider:')) {
     targetDir = sidersDir;
@@ -64,14 +106,17 @@ export const getEmotionFile = (emotionId) => {
     fileName = emotionId.includes('.') ? emotionId : `${emotionId}.png`;
   }
 
-  const filePath = path.join(targetDir, fileName);
-  if (!fs.existsSync(filePath)) {
+  let filePath = findEmotionFile(targetDir, fileName);
+  if (!filePath) {
     // If not found in specific category, try general as fallback
-    const fallbackPath = path.join(emotionsDir, fileName.includes('.') ? fileName : `${fileName}.png`);
-    if (fs.existsSync(fallbackPath)) return fs.createReadStream(fallbackPath);
-    return null;
+    filePath = findEmotionFile(emotionsDir, fileName);
+    if (!filePath) return null;
   }
-  return fs.createReadStream(filePath);
+
+  return {
+    contentType: getContentType(filePath),
+    stream: fs.createReadStream(filePath),
+  };
 };
 
 // Store emotion metadata in Firestore (for analytics or future features)

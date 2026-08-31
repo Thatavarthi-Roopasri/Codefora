@@ -29,8 +29,10 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState(false);
+  const [adminAccessError, setAdminAccessError] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [adminSession, setAdminSession] = useState(null);
+  const [systemHealth, setSystemHealth] = useState(null);
 
   // Real data states
   const [statsData, setStatsData] = useState(null);
@@ -55,16 +57,12 @@ export default function AdminDashboardPage() {
     { icon: <Activity size={16} />, class: 'updated', text: 'System initialized and connected to server.', time: 'just now' }
   ]);
 
-  useEffect(() => {
-    if (!authLoading && !isAdmin) {
-      navigate('/home');
-    }
-  }, [isAdmin, authLoading, navigate]);
-
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [s, r, p, u, f, submissionData, auditData] = await Promise.all([
+      const [adminMe, healthData, s, r, p, u, f, submissionData, auditData] = await Promise.all([
+        api.request("/api/admin/me"),
+        api.request("/api/health").catch(() => null),
         api.request("/api/admin/stats"),
         api.request("/api/admin/rooms"),
         api.request("/api/admin/problems"),
@@ -73,8 +71,10 @@ export default function AdminDashboardPage() {
         api.request("/api/admin/submissions").catch(() => []),
         api.request("/api/admin/audit-log").catch(() => [])
       ]);
+      setAdminSession(adminMe);
+      setSystemHealth(healthData);
       setStatsData(s);
-      setIsSuperAdmin(s.isSuperAdmin || false);
+      setIsSuperAdmin(adminMe.isSuperAdmin || s.isSuperAdmin || false);
       setRooms(r);
       setProblemList(p);
       setUsers(u);
@@ -87,11 +87,14 @@ export default function AdminDashboardPage() {
       setActivityLog(Array.isArray(auditData) && auditData.length
         ? auditData.map(toActivityLog)
         : [{ icon: <Activity size={16} />, class: 'updated', text: 'System initialized and connected to server.', time: 'just now' }]);
-      setAuthError(false);
+      setAdminAccessError("");
     } catch (err) {
       console.error("Failed to fetch admin data:", err);
-      if (err.message.includes("403") || err.message.includes("401") || err.message.toLowerCase().includes("denied") || err.message.toLowerCase().includes("expired")) {
-        setAuthError(true);
+      const message = err.message.toLowerCase();
+      if (message.includes("401") || message.includes("expired") || message.includes("invalid")) {
+        setAdminAccessError("expired");
+      } else if (message.includes("403") || message.includes("denied") || message.includes("forbidden")) {
+        setAdminAccessError("forbidden");
       }
     } finally {
       setLoading(false);
@@ -99,8 +102,19 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    if (isAdmin) fetchData();
-  }, [isAdmin]);
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      setAdminAccessError("login");
+      return;
+    }
+    if (!isAdmin) {
+      setLoading(false);
+      setAdminAccessError("forbidden");
+      return;
+    }
+    fetchData();
+  }, [authLoading, user, isAdmin]);
 
   const handleRoomDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this room?")) return;
@@ -263,22 +277,50 @@ export default function AdminDashboardPage() {
     }
   };
 
-  if (authError) {
+  const adminAccessCopy = {
+    login: {
+      title: "Admin Login Required",
+      message: "Sign in with an administrator account to open the Admin Dashboard.",
+      action: "Go to Login"
+    },
+    forbidden: {
+      title: "Admin Access Required",
+      message: "Your account is signed in, but it is not authorized for the Admin Dashboard.",
+      action: "Back to Home"
+    },
+    expired: {
+      title: "Admin Session Expired",
+      message: "Your admin session is invalid or expired. Please sign in again before continuing.",
+      action: "Sign In Again"
+    }
+  };
+
+  if (adminAccessError) {
+    const copy = adminAccessCopy[adminAccessError] || adminAccessCopy.forbidden;
+    const actionTarget = adminAccessError === "forbidden" ? "/home" : "/";
     return (
       <div className="admin-dashboard">
         <Navbar />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '20px' }}>
           <ShieldAlert size={64} style={{ color: '#ff5555', marginBottom: '20px' }} />
-          <h2 style={{ marginBottom: '10px' }}>Access Denied</h2>
+          <h2 style={{ marginBottom: '10px' }}>{copy.title}</h2>
           <p style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', maxWidth: '400px' }}>
-            You do not have permission to view the Admin Dashboard.
+            {copy.message}
           </p>
+          <button
+            type="button"
+            className="admin-button primary"
+            onClick={() => navigate(actionTarget)}
+            style={{ marginTop: '22px' }}
+          >
+            {copy.action}
+          </button>
         </div>
       </div>
     );
   }
 
-  if (loading || !isAdmin) return <div className="admin-dashboard-container"><Navbar /><div style={{ padding: '100px', textAlign: 'center', color: 'white' }}>Verifying Administrator...</div></div>;
+  if (loading || !adminSession) return <div className="admin-dashboard-container"><Navbar /><div style={{ padding: '100px', textAlign: 'center', color: 'white' }}>Verifying Administrator...</div></div>;
 
   const stats = statsData ? [
     { label: 'Total Users', value: statsData.totalUsers, trend: '+ 12.4% from yesterday', icon: <Users />, color: '#8BE9FD' },
@@ -343,6 +385,11 @@ export default function AdminDashboardPage() {
     { label: 'Active rooms', value: rooms.length, detail: `${rooms.filter((room) => room.isLocked).length} locked`, icon: <Server size={18} />, tone: 'warning' },
     { label: 'Published problems', value: problemList.filter((problem) => problem.published).length, detail: `${problemList.length} total problems`, icon: <Code size={18} />, tone: 'success' }
   ];
+  const firestoreMode = systemHealth?.firestore || 'unknown';
+  const authMode = systemHealth?.auth || 'unknown';
+  const roomStorage = systemHealth?.services?.rooms?.storage || 'unknown';
+  const challengeRenderer = systemHealth?.services?.challengeRenderer || {};
+  const hasSystemWarning = firestoreMode !== 'real' || authMode !== 'real' || roomStorage !== 'firestore' || challengeRenderer.browser !== 'available';
 
   // The activityLog state is defined above, removing the static duplicate.
 
@@ -411,6 +458,24 @@ export default function AdminDashboardPage() {
 
         {/* Center Content */}
         <div className="admin-content-area" style={{ minWidth: 0, overflowX: 'hidden' }}>
+          <div className={`admin-health-strip ${hasSystemWarning ? 'warning' : 'healthy'}`}>
+            <div>
+              <strong>{hasSystemWarning ? 'Production checks need attention' : 'Production services healthy'}</strong>
+              <span>Signed in as {adminSession.email || adminSession.uid || 'admin'} ({adminSession.role})</span>
+              {hasSystemWarning && (
+                <span style={{ color: '#fbbf24', marginTop: '4px' }}>
+                  Mock services are active. Local saves may use JSON/mock storage and are not confirmed in real Firestore.
+                </span>
+              )}
+            </div>
+            <div className="admin-health-pills">
+              <span className={`status-badge ${firestoreMode === 'real' ? 'published' : 'suspended'}`}>Firestore {firestoreMode}</span>
+              <span className={`status-badge ${authMode === 'real' ? 'published' : 'suspended'}`}>Auth {authMode}</span>
+              <span className={`status-badge ${roomStorage === 'firestore' ? 'published' : 'suspended'}`}>Rooms {roomStorage}</span>
+              <span className={`status-badge ${challengeRenderer.browser === 'available' ? 'published' : 'blocked'}`}>Renderer {challengeRenderer.browser || 'unknown'}</span>
+            </div>
+          </div>
+
           {/* PROBLEM FORM MODAL */}
           {showProblemForm && (
             <div className="admin-panel admin-modal-overlay">

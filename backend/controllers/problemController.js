@@ -23,7 +23,7 @@ export function createProblemController() {
         // Return only published problems for public view
         const published = problems.filter(p => p.published !== false).map(toPublicProblem);
         return response.json(published);
-      } catch (error) {
+      } catch {
         return response.status(500).json({ error: "Could not fetch problems" });
       }
     },
@@ -34,7 +34,7 @@ export function createProblemController() {
         const problem = problems.find(p => p.id === id);
         if (!problem) return response.status(404).json({ error: "Problem not found" });
         return response.json(toPublicProblem(problem));
-      } catch (error) {
+      } catch {
         return response.status(500).json({ error: "Could not fetch problem" });
       }
     }

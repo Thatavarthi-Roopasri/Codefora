@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  Edit3, Code, Users, Flame, Trophy, Award, 
-  Shield, CheckCircle2, MessageSquare, MoreHorizontal, UserPlus, 
-  Activity, Star, ExternalLink, Flag, X, Save, Folder, Clock, Search, ShieldAlert, Copy
+import {
+  Edit3, Code, Users, Flame, Trophy,
+  Shield, CheckCircle2, UserPlus,
+  Activity, Star, ExternalLink, X, Save, Folder, Clock, Search, ShieldAlert, Copy
 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { copyToClipboard } from "../lib/clipboard";
-import { signInWithGoogle } from "../lib/firebase";
+import { auth, signInWithGoogle } from "../lib/firebase";
+import { updateProfile } from "firebase/auth";
 import { isGuestUser } from "../lib/userAccess";
 import EmotionPicker from "../components/EmotionPicker";
 import { useAuth } from "../hooks/useAuth";
-import { getProfile, saveProfile } from "../api/client";
+import { api, getProfile, saveProfile } from "../api/client";
 import { API_URL } from "../config";
 import { trackEvent } from "../lib/analytics";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
+import { saveHostToken, saveInviteCode } from "../lib/navigation";
+import { publishProfileSync, subscribeProfileSync } from "../lib/profileSync";
+import { socket } from "../lib/socket";
 import "../styles/profile.css";
 
 import defaultAvatar from "../../assets/scene1.jpeg"; // Fallback banner
@@ -47,11 +51,11 @@ function FriendProfileItem({ friend, navigate }) {
             {friend.name ? friend.name[0].toUpperCase() : '?'}
           </div>
         )}
-        <div 
-          className="friend-status" 
-          style={{ 
-            background: profile?.presence === 'in-room' ? '#3b82f6' : profile?.presence === 'online' ? '#10b981' : '#64748b' 
-          }} 
+        <div
+          className="friend-status"
+          style={{
+            background: profile?.presence === 'in-room' ? '#3b82f6' : profile?.presence === 'online' ? '#10b981' : '#64748b'
+          }}
           title={profile?.presence === 'in-room' ? 'In Room' : profile?.presence === 'online' ? 'Online' : 'Offline'}
         />
       </div>
@@ -74,15 +78,23 @@ export function ProfilePage() {
   const shouldPromptGoogleSignIn = !loading && isOwnProfile && isGuestUser(user);
   const [googleSignInBusy, setGoogleSignInBusy] = useState(false);
   const [googleSignInError, setGoogleSignInError] = useState("");
-  
+
   // Real Profile Data
   const [profileData, setProfileData] = useState({});
   const [myFriends, setMyFriends] = useState([]);
   const [friendProfiles, setFriendProfiles] = useState({});
-  const [toastMsg, setToastMsg] = useState("");
+  const [savedWorks, setSavedWorks] = useState([]);
+  const [resumingWorkId, setResumingWorkId] = useState(null);
+  const [endingWorkId, setEndingWorkId] = useState(null);
+  const [isSavedWorksModalOpen, setIsSavedWorksModalOpen] = useState(false);
+  const [savedWorkSearch, setSavedWorkSearch] = useState("");
+  const [savedWorkStatusFilter, setSavedWorkStatusFilter] = useState("all");
+  const [savedWorkStorageFilter, setSavedWorkStorageFilter] = useState("all");
+  const [savedWorkSort, setSavedWorkSort] = useState("latest");
+  const [, setToastMsg] = useState("");
   const [copyFeedback, setCopyFeedback] = useState("");
   const copyFeedbackTimerRef = useRef(null);
-  
+
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(""), 3000);
@@ -91,7 +103,7 @@ export function ProfilePage() {
   const [bio, setBio] = useState("");
   const [selectedEmotion, setSelectedEmotion] = useState("");
   const [selectedCommunity, setSelectedCommunity] = useState("sider");
-  const [heatmapTooltip, setHeatmapTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
+  const [heatmapTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
   const heatmapContainerRef = useRef(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
@@ -106,7 +118,6 @@ export function ProfilePage() {
   const [editCommunity, setEditCommunity] = useState("sider");
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
-  const [selectedPublicProfileId, setSelectedPublicProfileId] = useState(null);
 
   // Report User State
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -118,6 +129,58 @@ export function ProfilePage() {
       heatmapContainerRef.current.scrollLeft = heatmapContainerRef.current.scrollWidth;
     }
   }, [loadingProfile]);
+
+  useEffect(() => {
+    return subscribeProfileSync((syncedProfile) => {
+      const syncedUserId = syncedProfile.uid || syncedProfile.userId;
+      if (!syncedUserId || syncedUserId !== targetUserId) return;
+
+      setProfileData((current) => ({ ...current, ...syncedProfile }));
+      if (syncedProfile.displayName) setDisplayName(syncedProfile.displayName);
+      setSelectedEmotion(syncedProfile.emotionId || "");
+      if (syncedProfile.community) {
+        setSelectedCommunity(syncedProfile.community);
+        document.documentElement.dataset.community = syncedProfile.community;
+      }
+    });
+  }, [targetUserId]);
+
+  useEffect(() => {
+    if (!user?.uid || isGuestUser(user)) return undefined;
+
+    const refreshVisibleFriends = async (payload = {}) => {
+      if (payload.userId && payload.userId !== user.uid && payload.userId !== targetUserId) return;
+
+      const [visibleProfile, ownProfile] = await Promise.all([
+        targetUserId ? getProfile(targetUserId).catch(() => null) : Promise.resolve(null),
+        !isOwnProfile ? getProfile(user.uid).catch(() => null) : Promise.resolve(null)
+      ]);
+
+      if (visibleProfile) {
+        setProfileData((current) => ({
+          ...current,
+          friends: visibleProfile.friends || [],
+          stats: visibleProfile.stats || current.stats,
+          activities: visibleProfile.activities || current.activities
+        }));
+      }
+      if (ownProfile?.friends) setMyFriends(ownProfile.friends);
+      setFriendProfiles({});
+    };
+    const announcePresence = () => socket.emit("user:presence", user.uid);
+
+    if (!socket.connected) socket.connect();
+    announcePresence();
+    socket.on("connect", announcePresence);
+    socket.on("friends:refresh", refreshVisibleFriends);
+    socket.on("presence:changed", refreshVisibleFriends);
+
+    return () => {
+      socket.off("connect", announcePresence);
+      socket.off("friends:refresh", refreshVisibleFriends);
+      socket.off("presence:changed", refreshVisibleFriends);
+    };
+  }, [isOwnProfile, targetUserId, user]);
 
   useEffect(() => {
     return () => {
@@ -136,13 +199,25 @@ export function ProfilePage() {
     async function loadProfile() {
       setLoadingProfile(true);
       const profile = await getProfile(targetUserId).catch(() => ({}));
+      const works = isOwnProfile ? await api.getWorks(targetUserId).catch(() => []) : [];
       if (!isOwnProfile && user?.uid) {
         const myProfile = await getProfile(user.uid).catch(() => ({}));
         if (active && myProfile.friends) setMyFriends(myProfile.friends);
       }
       if (!active) return;
-      setProfileData(profile || {});
-      setDisplayName(profile.displayName || (isOwnProfile ? user?.displayName : "") || "");
+      const authDisplayName = isOwnProfile
+        ? user?.displayName || user?.email?.split("@")[0] || localStorage.getItem("codefora_username") || ""
+        : "";
+      const profileDisplayName = String(profile?.displayName || "").trim();
+      const resolvedDisplayName = isOwnProfile && (!profileDisplayName || profileDisplayName === "Someone")
+        ? authDisplayName
+        : profileDisplayName;
+      setProfileData({
+        ...(profile || {}),
+        displayName: resolvedDisplayName || profile?.displayName || ""
+      });
+      setSavedWorks(Array.isArray(works) ? works : []);
+      setDisplayName(resolvedDisplayName || "");
       setBio(profile.bio || "Building consistency one problem at a time.");
       setSelectedEmotion(profile.emotionId || "");
       setSelectedCommunity(profile.community || "sider");
@@ -151,7 +226,36 @@ export function ProfilePage() {
     trackEvent("profile_visit", { user_id: targetUserId });
     loadProfile();
     return () => { active = false; };
-  }, [targetUserId, isOwnProfile, shouldPromptGoogleSignIn, user?.displayName]);
+  }, [targetUserId, isOwnProfile, shouldPromptGoogleSignIn, user?.displayName, user?.email]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !targetUserId) return undefined;
+
+    const refreshSavedWorks = () => {
+      api.getWorks(targetUserId)
+        .then((works) => setSavedWorks(Array.isArray(works) ? works : []))
+        .catch(() => {});
+    };
+    const handleSavedWorksChanged = (event) => {
+      if (!event.detail?.userId || event.detail.userId === targetUserId) refreshSavedWorks();
+    };
+    const handleStorage = (event) => {
+      if (event.key !== "codefora_saved_works_changed" || !event.newValue) return;
+      try {
+        const payload = JSON.parse(event.newValue);
+        if (!payload.userId || payload.userId === targetUserId) refreshSavedWorks();
+      } catch {
+        refreshSavedWorks();
+      }
+    };
+
+    window.addEventListener("codefora:saved-works-changed", handleSavedWorksChanged);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("codefora:saved-works-changed", handleSavedWorksChanged);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [isOwnProfile, targetUserId]);
 
   const continueWithGoogle = async () => {
     setGoogleSignInBusy(true);
@@ -163,22 +267,68 @@ export function ProfilePage() {
         localStorage.setItem("codefora_user_id", account.uid);
         localStorage.setItem("codefora_username", account.displayName || account.email?.split("@")[0] || "Developer");
       }
-    } catch (error) {
+    } catch {
       setGoogleSignInError("Google sign-in did not complete. Please try again.");
     } finally {
       setGoogleSignInBusy(false);
     }
   };
 
+  const resumeSavedWork = async (work) => {
+    const currentUserId = user?.uid || targetUserId;
+    if (!currentUserId || !work?.id || resumingWorkId) {
+      showToast("Sign in again to resume this work.");
+      return;
+    }
+    if (work.projectStatus === "completed" || work.readOnly) {
+      showToast("This project has ended and cannot be resumed or edited.");
+      return;
+    }
+
+    setResumingWorkId(work.id);
+    try {
+      const response = await api.resumeSavedWorkRoom(currentUserId, work.id);
+      const reopenedRoom = response.room;
+      if (!reopenedRoom?.id) throw new Error("Resume did not return a room.");
+      saveHostToken(reopenedRoom.id, reopenedRoom.hostToken);
+      saveInviteCode(reopenedRoom.id, reopenedRoom.inviteCode);
+      navigate(`/room/${encodeURIComponent(reopenedRoom.id)}`, {
+        state: { skipRoomGuide: true, resumedProjectId: work.id }
+      });
+    } catch (error) {
+      showToast(error.message || "Could not reopen this saved work");
+    } finally {
+      setResumingWorkId(null);
+    }
+  };
+
+  const endSavedWork = async (work) => {
+    if (!user?.uid || !work?.id || endingWorkId) return;
+    const confirmed = window.confirm("End this project? This saves a final snapshot, locks the project permanently, and you will not be able to resume or edit it again.");
+    if (!confirmed) return;
+
+    setEndingWorkId(work.id);
+    try {
+      const response = await api.endWork(user.uid, work.id);
+      const endedWork = response.work || {};
+      setSavedWorks((items) => items.map((item) => item.id === work.id ? { ...item, ...endedWork } : item));
+      showToast("Project ended. It cannot be resumed or edited.");
+    } catch (error) {
+      showToast(error.message || "Could not end this project");
+    } finally {
+      setEndingWorkId(null);
+    }
+  };
+
   const headerName = useMemo(() => displayName || (isOwnProfile ? user?.displayName : "Unknown Developer"), [displayName, isOwnProfile, user?.displayName]);
   const emotionImage = selectedEmotion ? `${API_URL}/api/emotions/${selectedEmotion}/image` : null;
-  
+
   const stats = profileData.stats || {};
   const problemsSolved = Number.isFinite(stats.problemsSolved) ? stats.problemsSolved : 0;
   const currentStreak = Number.isFinite(stats.currentStreak) ? stats.currentStreak : 0;
   const roomsJoined = Number.isFinite(stats.roomsJoined) ? stats.roomsJoined : 0;
   const globalRank = stats.globalRank || "-";
-  
+
   // Real Friends & Activities (currently empty)
   const rawFriends = profileData.friends || [];
   const friends = useMemo(() => {
@@ -193,6 +343,96 @@ export function ProfilePage() {
     friendCode: friendProfiles[friend.id]?.friendCode || friend.friendCode || ""
   })), [friends, friendProfiles]);
   const activities = profileData.activities || [];
+  const sortedSavedWorks = useMemo(() => {
+    const term = savedWorkSearch.trim().toLowerCase();
+    return [...savedWorks]
+      .filter((work) => {
+        const completed = work.projectStatus === "completed" || work.readOnly;
+        const storageMode = work.storage?.mode || "mock";
+        const statusMatches =
+          savedWorkStatusFilter === "all" ||
+          (savedWorkStatusFilter === "active" && !completed) ||
+          (savedWorkStatusFilter === "completed" && completed);
+        const storageMatches =
+          savedWorkStorageFilter === "all" ||
+          (savedWorkStorageFilter === "mock" && storageMode !== "firestore") ||
+          (savedWorkStorageFilter === "firestore" && storageMode === "firestore");
+        const textMatches =
+          !term ||
+          [work.name, work.type, work.roomName, work.originRoomId, work.storage?.label]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(term));
+        return statusMatches && storageMatches && textMatches;
+      })
+      .sort((a, b) => {
+        const aTime = Number(a.storage?.savedAt || a.updatedAt || a.createdAt || 0);
+        const bTime = Number(b.storage?.savedAt || b.updatedAt || b.createdAt || 0);
+        if (savedWorkSort === "oldest") return aTime - bTime;
+        return bTime - aTime;
+      });
+  }, [savedWorks, savedWorkSearch, savedWorkStatusFilter, savedWorkStorageFilter, savedWorkSort]);
+
+  const renderSavedWorkItem = (work) => {
+    const isCompletedWork = work.projectStatus === "completed" || work.readOnly;
+    const canResume = Boolean(work.originRoomId);
+    const canEnd = canResume && !isCompletedWork;
+    const fileCount = work.fileCount || work.files?.length || 0;
+    const storageLabel = work.storage?.label || (work.storage?.mode === "firestore" ? "Real Firestore" : "local/mock storage");
+    const savedAt = new Date(work.storage?.savedAt || work.updatedAt || work.createdAt).toLocaleString();
+
+    return (
+      <div key={work.id} className="activity-item">
+        <div className="activity-icon"><Folder size={16} className="text-blue" /></div>
+        <div className="activity-info">
+          <div className="activity-title">{work.name || "Saved Work"}</div>
+          <div className="activity-subtext">
+            {isCompletedWork
+              ? `Completed project - ${fileCount} files - read-only`
+              : `${work.type || "workspace"} - ${fileCount} files`}
+          </div>
+          <div className="activity-subtext">
+            Saved to {storageLabel} at {savedAt}
+          </div>
+        </div>
+        <div className="activity-meta">
+          <div className="activity-time">{new Date(work.updatedAt || work.createdAt).toLocaleDateString()}</div>
+          {canResume ? (
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              {isCompletedWork ? (
+                <span className="room-project-resume" style={{ cursor: "default", color: "#cbd5e1", borderColor: "rgba(148, 163, 184, 0.35)", background: "rgba(15, 23, 42, 0.45)" }}>
+                  Ended - cannot edit
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="room-project-resume"
+                  onClick={() => resumeSavedWork(work)}
+                  disabled={resumingWorkId === work.id}
+                  title="Resume this saved room work"
+                >
+                  {resumingWorkId === work.id ? "Opening..." : "Resume"} <ExternalLink size={13} />
+                </button>
+              )}
+              {canEnd && (
+                <button
+                  type="button"
+                  className="room-project-resume"
+                  onClick={() => endSavedWork(work)}
+                  disabled={endingWorkId === work.id}
+                  title="End this project and make future opens read-only"
+                  style={{ borderColor: "rgba(248, 113, 113, 0.55)", color: "#fca5a5", background: "rgba(127, 29, 29, 0.18)" }}
+                >
+                  {endingWorkId === work.id ? "Ending..." : "End Project"}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="activity-xp">+{work.contributionCount || 1}</div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     let active = true;
@@ -249,6 +489,11 @@ export function ProfilePage() {
 
     const ok = await saveProfile(user.uid, nextProfile).then(() => true).catch(() => false);
     if (ok) {
+      if (auth?.currentUser && nextProfile.displayName && auth.currentUser.displayName !== nextProfile.displayName) {
+        await updateProfile(auth.currentUser, { displayName: nextProfile.displayName }).catch((error) => {
+          console.warn("Firebase display name sync failed:", error);
+        });
+      }
       setProfileData(nextProfile);
       setDisplayName(nextProfile.displayName);
       setBio(nextProfile.bio);
@@ -258,6 +503,7 @@ export function ProfilePage() {
       localStorage.setItem("codefora_community", nextProfile.community);
       localStorage.setItem("codefora_username", nextProfile.displayName);
       window.dispatchEvent(new Event("profileUpdated"));
+      publishProfileSync({ uid: user.uid, ...nextProfile });
       setIsEditingProfile(false);
       setIsEditingAvatar(false);
     } else {
@@ -266,33 +512,12 @@ export function ProfilePage() {
     setIsSaving(false);
   };
 
-  const handleRemoveFriend = async (friendId) => {
-    try {
-      const { api } = await import("../api/client");
-      await api.removeFriend(user.uid, friendId);
-      
-      const newFriends = friends.filter(f => f.id !== friendId);
-      setProfileData(prev => ({ ...prev, friends: newFriends }));
-      
-      const cachedProfileStr = localStorage.getItem("codefora_profile_" + user.uid);
-      if (cachedProfileStr) {
-        try {
-          const cp = JSON.parse(cachedProfileStr);
-          if (cp.friends) {
-            cp.friends = cp.friends.filter(f => f.id !== friendId);
-            localStorage.setItem("codefora_profile_" + user.uid, JSON.stringify(cp));
-          }
-        } catch(e) {}
-      }
-    } catch (err) {
-      throw err;
-    }
-  };
+
 
   const handleReportSubmit = async (reasonOverride = null) => {
     const finalReason = reasonOverride || reportReason.trim();
     if (!finalReason) return;
-    
+
     setIsReporting(true);
     try {
       const { api } = await import("../api/client");
@@ -329,7 +554,7 @@ export function ProfilePage() {
       await copyToClipboard(userIdToCopy);
       setCopyFeedback("Copied!");
       showToast("USER ID copied to clipboard!");
-    } catch (err) {
+    } catch {
       setCopyFeedback("Copy failed");
       showToast("Failed to copy USER ID.");
     }
@@ -401,9 +626,9 @@ export function ProfilePage() {
   return (
     <main className="profile-dashboard">
       <Navbar />
-      
+
       <div className="profile-content">
-        
+
         {/* HEADER SECTION */}
         <div className="profile-header-card" style={{ backgroundImage: `url(${defaultAvatar})` }}>
           <div className="avatar-container">
@@ -438,7 +663,7 @@ export function ProfilePage() {
                 </div>
               )}
             </div>
-            
+
             <div className="profile-handle" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: "12px", fontFamily: "monospace", color: "rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)", display: 'flex', alignItems: 'center', gap: '6px' }}>
                 USER ID: {profileData.friendCode || "..."}
@@ -564,6 +789,7 @@ export function ProfilePage() {
             <ActivityHeatmap
               activities={activities}
               solvedProblems={profileData.solvedProblems}
+              savedWorks={savedWorks}
               stats={profileData.stats}
             />
           </div>
@@ -609,7 +835,7 @@ export function ProfilePage() {
               {(() => {
                 const modes = profileData.stats?.modeStats || {};
                 const totalMatches = Object.values(modes).reduce((sum, m) => sum + (m.matches || 0), 0);
-                
+
                 if (totalMatches === 0) {
                   return (
                     <>
@@ -643,12 +869,64 @@ export function ProfilePage() {
           <div className="dashboard-card">
             <div className="card-header">
               <h3>Saved Work (from playground and room)</h3>
-              <a href="#" className="view-all">View All</a>
+              <a href="#" className="view-all" onClick={(e) => { e.preventDefault(); setIsSavedWorksModalOpen(true); }}>View All</a>
             </div>
             <div className="projects-list">
-              <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                <Folder size={16} /> No public projects yet. Save a playground file as public to feature it here!
-              </div>
+              {sortedSavedWorks.length > 0 ? (
+                sortedSavedWorks.slice(0, 4).map((work) => (
+                  <div key={work.id} className="activity-item">
+                    <div className="activity-icon"><Folder size={16} className="text-blue" /></div>
+                    <div className="activity-info">
+                      <div className="activity-title">{work.name || "Saved Work"}</div>
+                      <div className="activity-subtext">
+                        {work.type === "room-project"
+                          ? `${work.projectStatus === "completed" ? "Completed room project" : "Active room project"} · ${work.fileCount || work.files?.length || 0} files`
+                          : `${work.type || "workspace"} · ${work.fileCount || work.files?.length || 0} files`}
+                      </div>
+                    </div>
+                    <div className="activity-meta">
+                      <div className="activity-time">{new Date(work.updatedAt || work.createdAt).toLocaleDateString()}</div>
+                      {work.originRoomId ? (
+                        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          {(work.projectStatus === "completed" || work.readOnly) ? (
+                            <span className="room-project-resume" style={{ cursor: "default", color: "#cbd5e1", borderColor: "rgba(148, 163, 184, 0.35)", background: "rgba(15, 23, 42, 0.45)" }}>
+                              Ended - cannot edit
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="room-project-resume"
+                              onClick={() => resumeSavedWork(work)}
+                              disabled={resumingWorkId === work.id}
+                              title="Resume this saved room work"
+                            >
+                              {resumingWorkId === work.id ? "Opening..." : "Resume"} <ExternalLink size={13} />
+                            </button>
+                          )}
+                          {work.projectStatus !== "completed" && !work.readOnly && (
+                            <button
+                              type="button"
+                              className="room-project-resume"
+                              onClick={() => endSavedWork(work)}
+                              disabled={endingWorkId === work.id}
+                              title="End this project and make future opens read-only"
+                              style={{ borderColor: "rgba(248, 113, 113, 0.55)", color: "#fca5a5", background: "rgba(127, 29, 29, 0.18)" }}
+                            >
+                              {endingWorkId === work.id ? "Ending..." : "End Project"}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="activity-xp">+{work.contributionCount || 1}</div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <Folder size={16} /> No public projects yet. Save a playground file as public to feature it here!
+                </div>
+              )}
             </div>
           </div>
 
@@ -682,6 +960,53 @@ export function ProfilePage() {
         </div>
       </div>
 
+      {isSavedWorksModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsSavedWorksModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '760px', height: '680px', display: 'flex', flexDirection: 'column', padding: 0 }}>
+            <div className="modal-header" style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              <h2>All Saved Work</h2>
+              <button className="close-btn" onClick={() => setIsSavedWorksModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="saved-work-toolbar">
+              <div className="saved-work-count">
+                {sortedSavedWorks.length} of {savedWorks.length} saved {savedWorks.length === 1 ? "project" : "projects"}
+              </div>
+              <input
+                type="search"
+                value={savedWorkSearch}
+                onChange={(event) => setSavedWorkSearch(event.target.value)}
+                placeholder="Search saved work..."
+              />
+              <select value={savedWorkStatusFilter} onChange={(event) => setSavedWorkStatusFilter(event.target.value)}>
+                <option value="all">All statuses</option>
+                <option value="active">Active only</option>
+                <option value="completed">Completed only</option>
+              </select>
+              <select value={savedWorkStorageFilter} onChange={(event) => setSavedWorkStorageFilter(event.target.value)}>
+                <option value="all">All storage</option>
+                <option value="mock">Local/mock</option>
+                <option value="firestore">Real Firestore</option>
+              </select>
+              <select value={savedWorkSort} onChange={(event) => setSavedWorkSort(event.target.value)}>
+                <option value="latest">Latest saved first</option>
+                <option value="oldest">Oldest saved first</option>
+              </select>
+            </div>
+            <div className="projects-list" style={{ padding: '18px 24px', overflowY: 'auto', gap: '12px' }}>
+              {sortedSavedWorks.length > 0 ? (
+                sortedSavedWorks.map(renderSavedWorkItem)
+              ) : (
+                <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                  <Folder size={16} /> No saved work yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EDIT PROFILE MODAL */}
       {isEditingProfile && (
         <div className="modal-overlay" onClick={() => setIsEditingProfile(false)}>
@@ -692,22 +1017,22 @@ export function ProfilePage() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="form-group">
                 <label>Display Name</label>
-                <input 
-                  type="text" 
-                  value={editName} 
-                  onChange={e => setEditName(e.target.value)} 
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
                   placeholder="Your name"
                 />
               </div>
               <div className="form-group">
                 <label>Bio</label>
-                <textarea 
-                  value={editBio} 
-                  onChange={e => setEditBio(e.target.value)} 
+                <textarea
+                  value={editBio}
+                  onChange={e => setEditBio(e.target.value)}
                   placeholder="Tell us about yourself..."
                 />
               </div>
@@ -760,13 +1085,13 @@ export function ProfilePage() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <div style={{ position: 'relative' }}>
                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
-                <input 
-                  type="text" 
-                  placeholder="Search friends by ID..." 
+                <input
+                  type="text"
+                  placeholder="Search friends by ID..."
                   value={friendSearchQuery}
                   onChange={e => setFriendSearchQuery(e.target.value)}
                   style={{
@@ -803,26 +1128,26 @@ export function ProfilePage() {
       {/* EDIT AVATAR MODAL */}
       {isEditingAvatar && (
         <div className="modal-overlay" onClick={() => setIsEditingAvatar(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div className="modal-content avatar-modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Change Avatar</h2>
               <button className="close-btn" onClick={() => setIsEditingAvatar(false)}>
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="form-group">
                 <label>Community</label>
                 <div className="community-selector-row">
-                  <button 
+                  <button
                     type="button"
                     className={`community-btn sider ${editCommunity === 'sider' ? 'active' : ''}`}
                     onClick={() => { setEditCommunity('sider'); setEditEmotion(""); }}
                   >
                     Sider
                   </button>
-                  <button 
+                  <button
                     type="button"
                     className={`community-btn loop ${editCommunity === 'loop' ? 'active' : ''}`}
                     onClick={() => { setEditCommunity('loop'); setEditEmotion(""); }}
@@ -834,11 +1159,11 @@ export function ProfilePage() {
 
               <div className="form-group">
                 <label>Choose Avatar (Emotion)</label>
-                <div style={{ maxHeight: '300px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px' }}>
-                  <EmotionPicker 
-                    selectedEmotion={editEmotion} 
-                    onSelectEmotion={setEditEmotion} 
-                    category={editCommunity} 
+                <div className="avatar-picker-scroll" style={{ maxHeight: '540px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px' }}>
+                  <EmotionPicker
+                    selectedEmotion={editEmotion}
+                    onSelectEmotion={setEditEmotion}
+                    category={editCommunity}
                   />
                 </div>
               </div>
@@ -868,9 +1193,9 @@ export function ProfilePage() {
                 <label>Quick Report Options</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', marginBottom: '20px' }}>
                   {["Cheating / Hacking", "Inappropriate Behavior", "Spam / Scam", "Offensive Content", "Harassment"].map(option => (
-                    <button 
+                    <button
                       key={option}
-                      className="btn-secondary" 
+                      className="btn-secondary"
                       style={{ textAlign: 'left', padding: '8px 12px', justifyContent: 'flex-start', border: '1px solid rgba(255, 85, 85, 0.3)', color: 'rgba(255,255,255,0.8)' }}
                       onClick={() => handleReportSubmit(option)}
                       disabled={isReporting}
@@ -881,9 +1206,9 @@ export function ProfilePage() {
                 </div>
 
                 <label>Or describe the issue (Optional)</label>
-                <textarea 
-                  className="profile-textarea" 
-                  rows="3" 
+                <textarea
+                  className="profile-textarea"
+                  rows="3"
                   placeholder="Provide additional details..."
                   value={reportReason}
                   onChange={(e) => setReportReason(e.target.value)}

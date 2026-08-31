@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { MessageSquare, X as XIcon, Bot, Sparkles, Send, User } from "lucide-react";
+import {  X as XIcon, Bot, Sparkles, Send, User } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
 

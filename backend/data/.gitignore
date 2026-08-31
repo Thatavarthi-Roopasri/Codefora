@@ -1,0 +1,8 @@
+# Keep local runtime/user data out of source control.
+rooms.json
+manualUsers.json
+localWorks.json
+manualNotifications.json
+manualDirectMessages.json
+*.backup.json
+backups/

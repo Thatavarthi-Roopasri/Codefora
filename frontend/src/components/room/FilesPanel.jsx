@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { FileCode2, Plus, X, Upload, Download, Save, MoreHorizontal, FileJson, FileText, Code2 } from "lucide-react";
+import { FileCode2, Plus, X, Upload, Download, FileJson, FileText, Code2 } from "lucide-react";
 import JSZip from "jszip";
 
 const FILE_TYPES = [
@@ -45,16 +45,12 @@ export function FilesPanel({
   permissions, 
   onCreateFile, 
   onExpectActiveName, 
-  onDeleteFile, 
-  onChangeLanguage, 
-  onSaveWork 
+  onDeleteFile
 }) {
   const [newFileName, setNewFileName] = useState("");
   const [newFileType, setNewFileType] = useState(FILE_TYPES[0].language);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [, setShowMoreMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
   const fileInputRef = useRef(null);
 
   function getFileIcon(filename) {
@@ -155,22 +151,6 @@ export function FilesPanel({
     }
   }
 
-  async function handleSaveWork() {
-    if (!onSaveWork) return;
-    setIsSaving(true);
-    setSaveMessage("");
-    const result = await onSaveWork(`Project in ${roomId}`);
-    if (result.success) {
-      setSaveMessage("Saved!");
-    } else {
-      setSaveMessage("Error");
-      alert(result.error || "Failed to save work");
-    }
-    setIsSaving(false);
-    setTimeout(() => setSaveMessage(""), 3000);
-    setShowMoreMenu(false);
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', paddingRight: '32px' }}>
@@ -194,16 +174,6 @@ export function FilesPanel({
           >
             <Download size={14} />
           </button>
-          {onSaveWork && permissions.canEdit && (
-            <button 
-              onClick={handleSaveWork}
-              title={isSaving ? "Saving..." : saveMessage || "Save Workspace (Ctrl+S)"}
-              disabled={isSaving}
-              style={{ background: 'transparent', border: 'none', color: saveMessage === "Saved!" ? "var(--success)" : saveMessage === "Error" ? "var(--error)" : "rgba(255,255,255,0.7)", cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', borderRadius: '4px', opacity: isSaving ? 0.5 : 1 }}
-            >
-              <Save size={14} />
-            </button>
-          )}
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleImport} />
         </div>
       </div>

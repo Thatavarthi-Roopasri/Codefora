@@ -219,6 +219,47 @@
   gap: 20px;
 }
 
+.admin-health-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  background: rgba(20, 24, 35, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.admin-health-strip.warning {
+  border-color: rgba(255, 184, 108, 0.45);
+  background: rgba(255, 184, 108, 0.08);
+}
+
+.admin-health-strip.healthy {
+  border-color: rgba(80, 250, 123, 0.32);
+}
+
+.admin-health-strip strong,
+.admin-health-strip span {
+  display: block;
+}
+
+.admin-health-strip strong {
+  margin-bottom: 4px;
+}
+
+.admin-health-strip > div:first-child span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.admin-health-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .admin-panel-header {
   display: flex;
   justify-content: space-between;

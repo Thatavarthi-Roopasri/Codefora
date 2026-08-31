@@ -72,7 +72,7 @@ async function readProblems(filePath) {
 }
 
 export function toPublicProblem(problem) {
-  const { hiddenTests, ...publicProblem } = problem;
+  const {  ...publicProblem } = problem;
   const tests = allTests(problem);
   const visibleTests = tests
     .filter((test) => !test.hidden)

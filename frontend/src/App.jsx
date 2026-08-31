@@ -1,32 +1,34 @@
 import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useTheme } from "./hooks/useTheme";
-import HomePage from "./pages/HomePage";
-import SignInPage from "./pages/SignInPage";
-import { ProblemsPage } from "./pages/ProblemsPage";
-import { ChallengesPage } from "./pages/ChallengesPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { RoomsPage } from "./pages/RoomsPage";
-import { RoomPage } from "./pages/RoomPage";
-import AdminDashboardPage from "./pages/AdminDashboardPage";
-import { PlaygroundPage } from "./pages/PlaygroundPage";
-import { DryRunPage } from "./pages/DryRunPage";
-import FeedbackPage from "./pages/FeedbackPage";
 import Loader from "./components/Loader";
 import { Footer } from "./components/Footer";
-import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
-import { TermsOfServicePage } from "./pages/TermsOfServicePage";
-import { CodeOfConductPage } from "./pages/CodeOfConductPage";
-import { RefundPolicyPage } from "./pages/RefundPolicyPage";
-import { ShippingDeliveryPage } from "./pages/ShippingDeliveryPage";
 import { useLocation } from "react-router-dom";
 import { trackPageView } from "./lib/analytics";
 import { useAuth } from "./hooks/useAuth";
 import { api } from "./api/client";
 import { isGuestUser } from "./lib/userAccess";
+import { saveCodeforaSession } from "./lib/session";
 
 import { socket } from "./lib/socket";
 import GlobalAiChat from "./components/GlobalAiChat";
+
+const HomePage = lazy(() => import("./pages/HomePage"));
+const SignInPage = lazy(() => import("./pages/SignInPage"));
+const ProblemsPage = lazy(() => import("./pages/ProblemsPage").then((module) => ({ default: module.ProblemsPage })));
+const ChallengesPage = lazy(() => import("./pages/ChallengesPage").then((module) => ({ default: module.ChallengesPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
+const RoomsPage = lazy(() => import("./pages/RoomsPage").then((module) => ({ default: module.RoomsPage })));
+const RoomPage = lazy(() => import("./pages/RoomPage").then((module) => ({ default: module.RoomPage })));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const PlaygroundPage = lazy(() => import("./pages/PlaygroundPage").then((module) => ({ default: module.PlaygroundPage })));
+const DryRunPage = lazy(() => import("./pages/DryRunPage").then((module) => ({ default: module.DryRunPage })));
+const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
+const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage").then((module) => ({ default: module.PrivacyPolicyPage })));
+const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage").then((module) => ({ default: module.TermsOfServicePage })));
+const CodeOfConductPage = lazy(() => import("./pages/CodeOfConductPage").then((module) => ({ default: module.CodeOfConductPage })));
+const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage").then((module) => ({ default: module.RefundPolicyPage })));
+const ShippingDeliveryPage = lazy(() => import("./pages/ShippingDeliveryPage").then((module) => ({ default: module.ShippingDeliveryPage })));
 
 function LoaderManager({ children }) {
   const location = useLocation();
@@ -57,10 +59,11 @@ function LoaderManager({ children }) {
         const profile = await api.bootstrapProfile();
         if (!active) return;
         const comm = profile.community || "sider";
+        const profileDisplayName = String(profile.displayName || "").trim();
+        const authDisplayName = user.displayName || user.email?.split("@")[0] || "Developer";
+        const displayName = !profileDisplayName || profileDisplayName === "Someone" ? authDisplayName : profileDisplayName;
         document.documentElement.dataset.community = comm;
-        localStorage.setItem("codefora_community", comm);
-        localStorage.setItem("codefora_user_id", user.uid);
-        localStorage.setItem("codefora_username", profile.displayName || user.displayName || user.email?.split("@")[0] || "Developer");
+        saveCodeforaSession({ uid: user.uid, displayName, community: comm });
         window.dispatchEvent(new Event("profileUpdated"));
 
         socket.connect();
@@ -89,7 +92,9 @@ function LoaderManager({ children }) {
   return (
     <>
       <Loader visible={loading} />
-      {children}
+      <Suspense fallback={<Loader visible />}>
+        {children}
+      </Suspense>
       <GlobalAiChat />
       {showFooter && <Footer />}
     </>

@@ -21,16 +21,29 @@ const assignUserColor = (role, existingUsers = []) => {
 
 export function registerCollaborationSocket(io, { roomRepository, roomService, profileController }) {
   const socketUsers = new Map();
+  const pendingRoomSaves = new Map();
   const broadcastRooms = () => io.emit("rooms:update", roomRepository.allPublicSummaries((room) => roomService.publicRoom(room)));
+  const saveRoomSoon = (room) => {
+    if (pendingRoomSaves.has(room.id)) return;
+    const timer = setTimeout(() => {
+      pendingRoomSaves.delete(room.id);
+      roomRepository.save(room).catch((error) => console.warn(`Room persistence failed: ${error.message}`));
+    }, 1000);
+    pendingRoomSaves.set(room.id, timer);
+  };
 
   io.on("connection", (socket) => {
     socket.on("user:presence", (userId) => {
       if (!userId) return;
+      const wasOffline = !globalOnlineUsers.has(userId);
       socket.globalUserId = userId;
       if (!globalOnlineUsers.has(userId)) {
         globalOnlineUsers.set(userId, new Set());
       }
       globalOnlineUsers.get(userId).add(socket.id);
+      if (wasOffline) {
+        io.emit("presence:changed", { userId, presence: "online", emittedAt: Date.now() });
+      }
     });
     socket.onAny((event, ...args) => {
       const activeEvents = ["room:join", "file:update", "file:create", "file:delete", "typing", "cursor:update", "chat:send", "mic:update", "voice:signal", "role:update"];
@@ -42,7 +55,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       }
     });
 
-    const handleJoin = async ({ roomId, username, inviteCode, hostToken, userId, sessionId, force, profile, emotionId }) => {
+    const handleJoin = async ({ roomId, username, inviteCode, hostToken, userId, sessionId, force, profile }) => {
       // 1. Strict User ID validation
       const rawUserId = String(userId || "").trim();
       const requestUserId = (rawUserId && rawUserId !== "null" && rawUserId !== "undefined") ? rawUserId : null;
@@ -65,6 +78,10 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         socket.emit("room:error", "Room not found");
         socket.emit("room:join:failed", { reason: "not_found", roomId });
         return;
+      }
+
+      if (room.project?.status === "completed") {
+        room.readOnly = true;
       }
 
       const isExistingUser = room.users.some(u => (requestUserId && u.userId === requestUserId) || (requestSessionId && u.sessionId === requestSessionId));
@@ -101,11 +118,19 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
           }
         }
         userIdToRoomId.delete(requestUserId);
+        io.emit("presence:changed", { userId: requestUserId, presence: "online", emittedAt: Date.now() });
       }
 
       const cleanName = username?.trim() || `User-${socket.id.slice(0, 4)}`;
       const isOwner = requestUserId && room.ownerUserId && requestUserId === room.ownerUserId;
       const isAuthorizedHost = hostToken === room.hostToken || isOwner;
+      const hasValidInvite = cleanInviteCode && cleanInviteCode === normalizeInvite(room.inviteCode);
+
+      if (room.visibility === "private" && !isAuthorizedHost && !hasValidInvite) {
+        socket.emit("room:error", "Private room requires a valid invite code");
+        socket.emit("room:join:failed", { reason: "private_code_required", roomId: room.id });
+        return;
+      }
       
       // A user is a Host if they are authorized OR if they are the first user to join the empty room
       const isHost = isAuthorizedHost || room.users.length === 0;
@@ -155,7 +180,10 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
 
       socket.join(room.id);
       socketUsers.set(socket.id, room.id);
-      if (requestUserId) userIdToRoomId.set(requestUserId, room.id);
+      if (requestUserId) {
+        userIdToRoomId.set(requestUserId, room.id);
+        io.emit("presence:changed", { userId: requestUserId, presence: "in-room", roomId: room.id, emittedAt: Date.now() });
+      }
 
       // If the returning user is a REAL host, demote any "temporary" host
       if (isAuthorizedHost) {
@@ -215,7 +243,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       broadcastRooms();
     });
 
-    socket.on("room:set_problem", ({ roomId, problemId, targetImage }) => {
+    socket.on("room:set_problem", ({ roomId, problemId, targetImage, challengeId }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
       const authorized = Boolean(room && ((user && user.role === "Host") || (user?.userId && room.ownerUserId && user.userId === room.ownerUserId)));
@@ -223,8 +251,12 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       if (!room || !authorized) return;
 
       room.problemId = problemId;
+      room.isChallenge = problemId === "ui-battle" || Boolean(targetImage || challengeId);
       if (targetImage) {
         room.targetImage = targetImage;
+      }
+      if (challengeId) {
+        room.challengeId = challengeId;
       }
       roomRepository.save(room).catch((error) => console.warn(`Room persistence failed: ${error.message}`));
       io.to(roomId).emit("room:state", roomService.snapshot(room));
@@ -300,9 +332,11 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         }
         const room = roomRepository.findById(roomId);
         const user = room && roomService.findUser(room, socket.id);
-        if (!room || !user || user.role === "Viewer") return;
+        if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer") return;
         const file = room.files.find((item) => item.name === fileName);
         if (!file) return;
+        file.code = code;
+        saveRoomSoon(room);
         // Broadcast the update so users viewing other files receive the changes in the background
         socket.to(roomId).emit("file:update", { fileName, code });
       });
@@ -311,7 +345,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       console.log(`[Socket] file:create requested by ${socket.id} for file ${fileName}`);
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer" || !fileName?.trim()) {
+      if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer" || !fileName?.trim()) {
         console.log(`[Socket] file:create REJECTED. Room: ${!!room}, User: ${!!user}, Role: ${user?.role}`);
         return;
       }
@@ -323,7 +357,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("file:delete", ({ roomId, fileName }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer") return;
       if (!roomService.removeFile(room, fileName)) return;
       roomRepository.save(room).catch((error) => console.warn(`Room persistence failed: ${error.message}`));
       io.to(roomId).emit("files:update", room.files);
@@ -332,7 +366,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("file:rename", ({ roomId, oldFileName, newFileName, language, code }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer" || !oldFileName || !newFileName?.trim()) return;
+      if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer" || !oldFileName || !newFileName?.trim()) return;
 
       const file = room.files.find((f) => f.name === oldFileName);
       if (!file) return;
@@ -381,7 +415,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("mic:update", ({ roomId, mic, speaking }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer") return;
       user.mic = Boolean(mic);
       user.speaking = Boolean(speaking);
       io.to(roomId).emit("presence:update", room.users);
@@ -397,7 +431,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("notes:update", ({ roomId, text }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || room.readOnly || room.project?.status === "completed" || !user || user.role === "Viewer") return;
       if (!room.notes) room.notes = { text: "", draws: [] };
       room.notes.text = text;
       roomRepository.save(room).catch(e => console.warn(`Room persistence failed: ${e.message}`));
@@ -407,7 +441,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("notes:draw", ({ roomId, draw }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || room.readOnly || !user || user.role === "Viewer") return;
       if (!room.notes) room.notes = { text: "", draws: [] };
       
       if (draw === "clear") {
@@ -470,7 +504,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("history:push", ({ roomId }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      if (!room || !user || user.role === "Viewer") return;
+      if (!room || room.readOnly || !user || user.role === "Viewer") return;
       
       roomService.addToHistory(room, user);
       io.to(roomId).emit("history:update", (room.history || []).slice(-10));
@@ -479,7 +513,10 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
     socket.on("room:end", ({ roomId }) => {
       const room = roomRepository.findById(roomId);
       const user = room && roomService.findUser(room, socket.id);
-      const authorized = Boolean(room && (user?.role === "Host" || (user?.userId && room.ownerUserId && user.userId === room.ownerUserId)));
+      const isProjectRoom = Boolean(room?.project);
+      const authorized = isProjectRoom
+        ? Boolean(room.project.status === "completed" && user?.userId && user.userId === room.ownerUserId)
+        : Boolean(room && (user?.role === "Host" || (user?.userId && room.ownerUserId && user.userId === room.ownerUserId)));
       if (!room || !authorized) return;
 
       console.log(`room:end - host closing room ${roomId}`);
@@ -492,8 +529,14 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         });
       }
 
-      roomRepository.delete(roomId).catch((error) => console.warn(`Room deletion failed: ${error.message}`));
-      io.to(roomId).emit("room:ended");
+      if (isProjectRoom) {
+        room.archivedAt = room.archivedAt || Date.now();
+        roomRepository.save(room).catch((error) => console.warn(`Project archive failed: ${error.message}`));
+        io.to(roomId).emit("room:ended", { projectEnded: true, ownerUserId: room.ownerUserId });
+      } else {
+        roomRepository.delete(roomId).catch((error) => console.warn(`Room deletion failed: ${error.message}`));
+        io.to(roomId).emit("room:ended");
+      }
       broadcastRooms();
     });
 
@@ -503,6 +546,7 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
         userSockets.delete(socket.id);
         if (userSockets.size === 0) {
           globalOnlineUsers.delete(socket.globalUserId);
+          io.emit("presence:changed", { userId: socket.globalUserId, presence: "offline", emittedAt: Date.now() });
         }
       }
 
@@ -514,6 +558,12 @@ export function registerCollaborationSocket(io, { roomRepository, roomService, p
       const disconnectingUser = room.users.find((user) => user.socketId === socket.id);
       if (disconnectingUser && disconnectingUser.userId) {
         userIdToRoomId.delete(disconnectingUser.userId);
+        const stillOnline = globalOnlineUsers.has(disconnectingUser.userId);
+        io.emit("presence:changed", {
+          userId: disconnectingUser.userId,
+          presence: stillOnline ? "online" : "offline",
+          emittedAt: Date.now()
+        });
       }
       
       room.users = room.users.filter((user) => user.socketId !== socket.id);

@@ -1,59 +1,8 @@
 import { Globe2, Loader2, Play, Terminal, Keyboard, PanelLeftClose, Monitor } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 
 // Double buffered iframe prevents the white flash when updating srcDoc
-function DoubleBufferedIframe({ srcDoc, className, title, sandbox }) {
-  const [activeIframe, setActiveIframe] = useState(0);
-  const [docs, setDocs] = useState([srcDoc, '']);
 
-  const activeIframeRef = useRef(0);
-
-  useEffect(() => {
-    setDocs(prev => {
-      const inactiveIdx = 1 - activeIframeRef.current;
-      if (prev[inactiveIdx] === srcDoc) return prev;
-      const next = [...prev];
-      next[inactiveIdx] = srcDoc;
-      return next;
-    });
-  }, [srcDoc]);
-
-  const handleLoad = (idx, currentDoc) => {
-    if (currentDoc === srcDoc) {
-      activeIframeRef.current = idx;
-      setActiveIframe(idx);
-    }
-  };
-
-  return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <iframe
-        className={className}
-        title={`${title} 0`}
-        sandbox={sandbox}
-        srcDoc={docs[0]}
-        onLoad={() => handleLoad(0, docs[0])}
-        style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          opacity: activeIframe === 0 ? 1 : 0,
-          pointerEvents: activeIframe === 0 ? 'auto' : 'none'
-        }}
-      />
-      <iframe
-        className={className}
-        title={`${title} 1`}
-        sandbox={sandbox}
-        srcDoc={docs[1]}
-        onLoad={() => handleLoad(1, docs[1])}
-        style={{
-          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          opacity: activeIframe === 1 ? 1 : 0,
-          pointerEvents: activeIframe === 1 ? 'auto' : 'none'
-        }}
-      />
-    </div>
-  );
-}
 
 export function ConsolePanel({ 
   output, 
@@ -61,10 +10,6 @@ export function ConsolePanel({
   style, 
   onResizeStart, 
   onClear, 
-  files = [], 
-  runFile, 
-  setRunFile, 
-  onRun, 
   isRunningCode, 
   isSubmittingCode, 
   onSubmit, 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, Maximize2 } from 'lucide-react';
+import { Target } from 'lucide-react';
 
 export function TargetViewer({ targetImage, difficulty }) {
   if (!targetImage) return null;
