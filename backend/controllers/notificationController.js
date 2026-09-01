@@ -156,8 +156,10 @@ export function createNotificationController({ auditService } = {}) {
 
     sendRoomInvite: async (request, response) => {
       try {
-        const { targetUserId, roomId, inviterName, inviterId } = request.body;
-        if (!targetUserId || !roomId || !inviterName) {
+        const { targetUserId, roomId } = request.body;
+        const inviterId = request.firebaseUser?.uid;
+        const inviterName = String(request.firebaseUser?.name || request.firebaseUser?.email?.split("@")[0] || "A friend").trim().slice(0, 80);
+        if (!targetUserId || !roomId || !inviterId) {
           return response.status(400).json({ error: "Invalid payload" });
         }
 

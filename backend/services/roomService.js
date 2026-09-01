@@ -7,7 +7,7 @@ export class RoomService {
     this.repository = repository;
   }
 
-  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, files, notes, activeFile, readOnly, sourceWorkId, completedAt }) {
+  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, challengeDifficulty, files, notes, activeFile, readOnly, sourceWorkId, completedAt }) {
     const trimmedName = name?.trim() || "Untitled Lab";
 
     if (this.repository.findByName(trimmedName) && !sourceWorkId) {
@@ -48,6 +48,7 @@ export class RoomService {
       isChallenge: !!isChallenge,
       targetImage: targetImage || null,
       challengeId: challengeId || null,
+      challengeDifficulty: normalizeChallengeDifficulty(challengeDifficulty),
       readOnly: Boolean(readOnly),
       sourceWorkId: sourceWorkId || null,
       completedAt: completedAt || null,
@@ -81,6 +82,7 @@ export class RoomService {
       isChallenge: Boolean(room.isChallenge),
       targetImage: room.targetImage || null,
       challengeId: room.challengeId || null,
+      challengeDifficulty: normalizeChallengeDifficulty(room.challengeDifficulty),
       createdAt: room.createdAt || Date.now(),
       readOnly: Boolean(room.readOnly),
       completedAt: room.completedAt || null,
@@ -144,6 +146,11 @@ export class RoomService {
     room.files = room.files.filter((file) => file.name !== fileName);
     return true;
   }
+}
+
+function normalizeChallengeDifficulty(difficulty) {
+  const clean = String(difficulty || "").trim().toLowerCase();
+  return ["easy", "medium", "hard"].includes(clean) ? clean : "easy";
 }
 
 function normalizeRoomFiles(files) {

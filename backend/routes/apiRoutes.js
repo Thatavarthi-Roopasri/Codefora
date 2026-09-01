@@ -95,8 +95,8 @@ export function createApiRoutes({ roomController, roomProjectController, roomRep
   router.post("/emotions/init", emotionController.initEmotions);
 
   // Challenge Routes
-  router.post("/challenge/generate", generateChallenge);
-  router.post("/challenge/submit", submitChallenge);
+  router.post("/challenge/generate", heavyLimiter, generateChallenge);
+  router.post("/challenge/submit", heavyLimiter, submitChallenge);
 
   // Feedback routes
   router.post("/feedback", feedbackController.submit);
@@ -126,9 +126,9 @@ export function createApiRoutes({ roomController, roomProjectController, roomRep
   }
 
   if (notificationController) {
-    router.get("/notifications/:userId", notificationController.getNotifications);
-    router.post("/notifications/invite", notificationController.sendRoomInvite);
-    router.post("/notifications/:userId/read", notificationController.markAsRead);
+    router.get("/notifications/:userId", firebaseAuth, requireCurrentUser, notificationController.getNotifications);
+    router.post("/notifications/invite", firebaseAuth, notificationController.sendRoomInvite);
+    router.post("/notifications/:userId/read", firebaseAuth, requireCurrentUser, notificationController.markAsRead);
   }
   if (directMessageController) {
     router.post("/messages", firebaseAuth, directMessageController.send);

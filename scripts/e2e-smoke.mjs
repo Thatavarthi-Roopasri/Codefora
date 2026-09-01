@@ -255,17 +255,32 @@ async function restoreRuntimeData(snapshot) {
   }
 }
 
-async function readJson(path, fallback) {
+async function readJson(filePath, fallback) {
   try {
-    return JSON.parse(await fs.readFile(path, "utf8"));
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
   } catch {
     return fallback;
   }
 }
 
-async function writeJson(path, data) {
-  await fs.mkdir(path.dirname(path), { recursive: true });
-  await fs.writeFile(path, `${JSON.stringify(data, null, 2)}\n`);
+async function writeJson(filePath, data) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+async function stopProcessTree(childProcess) {
+  if (!childProcess?.pid) return;
+  if (process.platform === "win32") {
+    await new Promise((resolve) => {
+      const killer = spawn("taskkill", ["/pid", String(childProcess.pid), "/t", "/f"], { stdio: "ignore" });
+      killer.on("close", resolve);
+      killer.on("error", resolve);
+    });
+    return;
+  }
+
+  childProcess.kill("SIGTERM");
+  await sleep(500);
 }
 
 async function cleanupE2EArtifacts(localLoginUserId) {
@@ -388,7 +403,6 @@ try {
   await cleanupE2EArtifacts(localLoginUserId);
   await restoreRuntimeData(runtimeDataSnapshot);
   if (devProcess) {
-    devProcess.kill();
-    await sleep(500);
+    await stopProcessTree(devProcess);
   }
 }

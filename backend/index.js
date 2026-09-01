@@ -14,6 +14,7 @@ import { RoomService } from "./services/roomService.js";
 import { registerCollaborationSocket } from "./sockets/collaborationSocket.js";
 import { initializeEmotionsInFirestore } from "./services/emotionService.js";
 import { setRealtimeIO } from "./utils/realtimeEvents.js";
+import { warmChallengeRenderer } from "./controllers/challengeController.js";
 
 import { createProfileController } from "./controllers/profileController.js";
 
@@ -99,6 +100,10 @@ server.listen(port, () => {
   if (startupEnv.strict) {
     console.log("Production startup validation passed.");
   }
+
+  warmChallengeRenderer().catch((error) => {
+    console.warn("Challenge renderer warmup failed.", error.message);
+  });
   
   // Run zombie room cleanup every minute
   setInterval(() => {

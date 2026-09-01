@@ -447,14 +447,14 @@ export function useRoomSession(roomId, usernameOverride = "", userIdOverride = "
     socket.emit("room:settings", { roomId: activeRoomId, max, visibility, allowAi, allowCopyPaste });
   }
 
-  function setProblem(problemId, targetImage, challengeId = null) {
+  function setProblem(problemId, targetImage, challengeId = null, challengeDifficulty = "easy") {
     const isHost = Boolean(me && (me.role === "Host" || (me.userId && room?.ownerUserId === me.userId)));
     if (!isHost) {
       alert("You don't have host permission.");
       return;
     }
     console.log("Emitting room:set_problem", { roomId: activeRoomId, problemId });
-    socket.emit("room:set_problem", { roomId: activeRoomId, problemId, targetImage, challengeId });
+    socket.emit("room:set_problem", { roomId: activeRoomId, problemId, targetImage, challengeId, challengeDifficulty });
   }
 
   function createFile(fileName, language, code) {

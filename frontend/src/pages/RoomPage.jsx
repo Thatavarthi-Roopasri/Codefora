@@ -107,7 +107,7 @@ export function RoomPage() {
   const isChallenge = room?.isChallenge || location.state?.challengeMode;
   const targetImage = room?.targetImage || location.state?.targetImage;
   const challengeId = room?.challengeId || location.state?.challengeId;
-  const difficulty = location.state?.difficulty || 'easy';
+  const difficulty = room?.challengeDifficulty || location.state?.difficulty || 'easy';
   const [isScoring, setIsScoring] = useState(false);
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
   const [scoreData, setScoreData] = useState(null);
@@ -222,7 +222,7 @@ export function RoomPage() {
         body: JSON.stringify({ difficulty })
       });
       if (targetPayload.targetImage && targetPayload.challengeId) {
-        actions.setProblem("ui-battle", targetPayload.targetImage, targetPayload.challengeId);
+        actions.setProblem("ui-battle", targetPayload.targetImage, targetPayload.challengeId, targetPayload.difficulty || difficulty);
       }
     } catch (err) {
       setProjectNotice(`Failed to generate a new challenge: ${err.message || "renderer unavailable"}`);

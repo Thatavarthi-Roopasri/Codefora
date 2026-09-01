@@ -6,7 +6,7 @@ const db = createFirestore();
 
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 const DEFAULT_OLLAMA_MODEL = "llama3.2:1b";
-const DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b";
 const DEFAULT_GEMINI_MODEL = "gemini-3-flash";
 
 export class AiService {
@@ -140,7 +140,7 @@ Respond STRICTLY with a JSON object in this format:
         Authorization: `Bearer ${groqKey}`
       },
       body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+        model: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
         messages: [{ role: "system", content: systemPrompt }],
         temperature: 0.3,
         response_format: { type: "json_object" }

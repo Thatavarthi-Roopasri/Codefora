@@ -29,6 +29,9 @@
     "eslint": "^10.9.1",
     "globals": "^17.11.0"
   },
+  "overrides": {
+    "shell-quote": "^1.10.0"
+  },
   "dependencies": {
     "extend": "^3.0.2"
   }
