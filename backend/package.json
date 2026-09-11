@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "lint": "eslint \"**/*.js\" --ignore-pattern node_modules --ignore-pattern data --max-warnings 9999",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

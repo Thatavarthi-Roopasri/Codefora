@@ -20,7 +20,7 @@ async function writeJSON(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 }
 
-export function createFeedbackController() {
+export function createFeedbackController({ auditService } = {}) {
   const db = createFirestore();
 
   if (db) {
@@ -43,6 +43,7 @@ export function createFeedbackController() {
           reportedName: reportedName || null,
           reporterId: reporterId || null,
           reporterName: reporterName || null,
+          status: "open",
           createdAt: Date.now()
         };
 
@@ -91,6 +92,59 @@ export function createFeedbackController() {
         } catch {
           return response.status(500).json({ error: error.message });
         }
+      }
+    },
+
+    updateStatus: async (request, response) => {
+      const allowedStatuses = new Set(["open", "reviewed", "actioned", "dismissed", "escalated"]);
+
+      try {
+        const { id } = request.params;
+        const { status } = request.body || {};
+
+        if (!allowedStatuses.has(status)) {
+          return response.status(400).json({ error: "Invalid moderation status." });
+        }
+
+        const updates = {
+          status,
+          reviewedAt: Date.now(),
+          reviewedBy: request.adminUser?.uid || null
+        };
+        let updatedFeedback = null;
+
+        if (db) {
+          const feedbackRef = db.collection("feedback").doc(id);
+          const feedbackDoc = await feedbackRef.get();
+          if (feedbackDoc.exists) {
+            updatedFeedback = { ...feedbackDoc.data(), ...updates };
+            await feedbackRef.set(updates, { merge: true });
+          }
+        }
+
+        const allFeedback = await readJSON(localFeedbackPath);
+        const localIndex = allFeedback.findIndex((feedback) => feedback.id === id);
+        if (localIndex !== -1) {
+          allFeedback[localIndex] = { ...allFeedback[localIndex], ...updates };
+          updatedFeedback = updatedFeedback || allFeedback[localIndex];
+          await writeJSON(localFeedbackPath, allFeedback);
+        }
+
+        if (!updatedFeedback) {
+          return response.status(404).json({ error: "Feedback item not found." });
+        }
+
+        auditService?.record({
+          actor: request.adminUser,
+          action: updatedFeedback.type === "report" ? "report.moderated" : "feedback.moderated",
+          target: id,
+          details: `Status changed to ${status}`
+        }).catch((auditError) => console.warn("Feedback audit record failed:", auditError.message));
+
+        return response.json({ success: true, feedback: updatedFeedback });
+      } catch (error) {
+        console.error("Updating feedback status failed:", error);
+        return response.status(500).json({ error: error.message });
       }
     }
   };

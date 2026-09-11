@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Joyride, STATUS, EVENTS } from 'react-joyride';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { TourMascotTooltip } from './TourMascotTooltip';
 import { useAuth } from '../hooks/useAuth';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { API_URL } from '../config';
+
+import { } from 'firebase/firestore';
+import { api } from '../api/client';
 
 const AutoClickBeacon = React.forwardRef((props, forwardedRef) => {
   const localRef = React.useRef(null);
@@ -25,14 +25,14 @@ const AutoClickBeacon = React.forwardRef((props, forwardedRef) => {
   }, [props.onClick]);
 
   return (
-    <span 
+    <span
       ref={(node) => {
         localRef.current = node;
         if (typeof forwardedRef === 'function') forwardedRef(node);
         else if (forwardedRef) forwardedRef.current = node;
-      }} 
-      style={{ opacity: 0, pointerEvents: 'none', position: 'absolute', width: '1px', height: '1px' }} 
-      {...props} 
+      }}
+      style={{ opacity: 0, pointerEvents: 'none', position: 'absolute', width: '1px', height: '1px' }}
+      {...props}
     />
   );
 });
@@ -40,13 +40,13 @@ const AutoClickBeacon = React.forwardRef((props, forwardedRef) => {
 export const TourManager = () => {
 
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+
   const location = useLocation();
   const [run, setRun] = useState(false);
   const [tourInitialized, setTourInitialized] = useState(false);
   const [domReady, setDomReady] = useState(true);
   const [mountJoyride, setMountJoyride] = useState(false);
-  const [tourViewVersion, setTourViewVersion] = useState(0);
+  const [, setTourViewVersion] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
 
   // Expose user ID to global scope for brutal overrides in tooltip
@@ -94,11 +94,9 @@ export const TourManager = () => {
   useEffect(() => {
     const saveTourStatusToApi = (status) => {
       if (!user) return;
-      fetch(`${API_URL}/api/profiles/${user.uid}/tour-status`, {
+      api.request(`/api/profiles/${user.uid}/tour-status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageName, status }),
-        keepalive: true
+        body: JSON.stringify({ pageName, status })
       }).catch(console.error);
     };
 
@@ -117,7 +115,7 @@ export const TourManager = () => {
     const handleManualStop = () => {
       setRun(false);
       sessionStorage.setItem(`tourCompleted_${pageName}`, 'true');
-      
+
       // Save permanently just like skipping the tour would
       const isManualUser = user?.providerId === 'manual';
       if (user && !isManualUser) {
@@ -136,7 +134,7 @@ export const TourManager = () => {
       window.removeEventListener('manual-start-tour', handleManualStart);
       window.removeEventListener('manual-stop-tour', handleManualStop);
     };
-  }, [pageName]);
+  }, [pageName, user]);
 
   // Determine if we should show the tour based on Firestore or Guest LocalStorage
   useEffect(() => {
@@ -151,11 +149,11 @@ export const TourManager = () => {
       }
 
       console.log(`[TourManager] Checking status for page: ${pageName}`);
-      
+
       // Prevent showing the tour again if they hit 'Back' to a page they already completed in this session
       const isCompletedInSession = sessionStorage.getItem(`tourCompleted_${pageName}`) === 'true';
       console.log(`[TourManager] Session completed status: ${isCompletedInSession}`);
-      
+
       if (isCompletedInSession) {
         setRun(false);
         setTourInitialized(true);
@@ -166,15 +164,14 @@ export const TourManager = () => {
 
       if (user && !isManualUser) {
         try {
-          const response = await fetch(`${API_URL}/api/profiles/${user.uid}/tour-status/${pageName}`);
-          
-            if (response.ok) {
-              const data = await response.json();
+          const data = await api.request(`/api/profiles/${user.uid}/tour-status/${pageName}`);
+
+            if (data) {
               const dbStatus = data.status;
               console.log(`[TourManager] DB status via API for ${pageName}: ${dbStatus}`);
-              
+
               const hasSeenLocal = localStorage.getItem(`codefora_tour_${user.uid}_${pageName}`) === 'true';
-              
+
               if (dbStatus || hasSeenLocal) {
                 setRun(false);
               } else {
@@ -223,26 +220,7 @@ export const TourManager = () => {
   }, []);
 
   // We split the steps by page!
-  const homeSteps = [
-    {
-      target: '.tour-navbar',
-      content: 'Welcome to Codefora! This is your main navigation hub. You can access all tools from here.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '#tour-join-room',
-      content: 'Click here to join a room and start pair-programming with others!',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '#tour-practice-button',
-      content: 'Or click Practice to solve LeetCode-style algorithmic problems on your own!',
-      disableBeacon: true,
-      placement: 'bottom',
-    }
-  ];
+
 
   const roomsSteps = [
     {
@@ -385,107 +363,9 @@ export const TourManager = () => {
     }
   ];
 
-  const playgroundSteps = [
-    {
-      target: '.tour-pg-file-create',
-      content: 'Welcome to the Playground! You can create new files for your project here.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-file-import',
-      content: 'Import existing files from your computer to work on them.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-file-export',
-      content: 'Download your entire project as a ZIP file when you are done.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-tabs',
-      content: 'Switch between your open files easily using these tabs.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-editor',
-      content: 'This is the code editor. Write your awesome code here!',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-run',
-      content: 'Run your code to see the output in the console.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-pg-save',
-      content: 'Save your work to your profile so you can access it later.',
-      disableBeacon: true,
-      placement: 'bottom',
-    },
-    {
-      target: '.tour-console',
-      content: 'The output of your code will appear down here in the Console.',
-      disableBeacon: true,
-      placement: 'top',
-    }
-  ];
 
-  const profileSteps = [
-    {
-      target: '.tour-profile-card',
-      content: 'This is your developer profile card. It shows your global rank and stats!',
-      disableBeacon: true,
-      placement: 'right',
-    },
-    {
-      target: '.tour-profile-settings',
-      content: 'Here you can update your personal information and preferences.',
-      disableBeacon: true,
-      placement: 'left',
-    },
-    {
-      target: '.tour-profile-name',
-      content: 'Change your display name so friends can find you.',
-      disableBeacon: true,
-      placement: 'top',
-    },
-    {
-      target: '.tour-profile-bio',
-      content: 'Write a short bio to introduce yourself to the community.',
-      disableBeacon: true,
-      placement: 'top',
-    },
-    {
-      target: '.tour-profile-community',
-      content: 'Select which community you belong to, Sider or Loop.',
-      disableBeacon: true,
-      placement: 'top',
-    },
-    {
-      target: '.tour-profile-avatar',
-      content: 'Customize your avatar or emotion to express yourself!',
-      disableBeacon: true,
-      placement: 'top',
-    },
-    {
-      target: '.tour-profile-works',
-      content: 'All the projects you save in the Playground will securely appear right here.',
-      disableBeacon: true,
-      placement: 'top',
-    },
-    {
-      target: '.tour-profile-activity',
-      content: 'Your recent activity, such as rooms joined or problems solved, will show up here.',
-      disableBeacon: true,
-      placement: 'top',
-    }
-  ];
+
+
 
   const codeRoomSteps = [
     {
@@ -638,9 +518,9 @@ export const TourManager = () => {
     }
 
     // When the tour finishes on the current page...
-    const isTourEnding = 
-      [STATUS.FINISHED, STATUS.SKIPPED].includes(status) || 
-      ['skip', 'close'].includes(action) || 
+    const isTourEnding =
+      [STATUS.FINISHED, STATUS.SKIPPED].includes(status) ||
+      ['skip', 'close'].includes(action) ||
       type === EVENTS.TOUR_END;
 
     if (isTourEnding) {
@@ -649,19 +529,17 @@ export const TourManager = () => {
       if (typeof window.setTourToggleState === 'function') {
         window.setTourToggleState(false);
       }
-      
+
       const isManualUser = user?.providerId === 'manual';
-      
+
       if (user && !isManualUser) {
         console.log(`[TourManager] Saving completion to API for user ${user.uid}`);
         // Sync completion for THIS SPECIFIC PAGE permanently to database via API
-        fetch(`${API_URL}/api/profiles/${user.uid}/tour-status`, {
+        api.request(`/api/profiles/${user.uid}/tour-status`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pageName, status: true }),
-          keepalive: true
+          body: JSON.stringify({ pageName, status: true })
         }).catch(console.error);
-        
+
         // Also save to local storage as a robust fallback
         localStorage.setItem(`codefora_tour_${user.uid}_${pageName}`, 'true');
       } else {
@@ -669,7 +547,7 @@ export const TourManager = () => {
         console.log(`[TourManager] Saving completion to local storage for ${fallbackId}`);
         localStorage.setItem(`codefora_tour_${fallbackId}_${pageName}`, 'true');
       }
-      
+
       // Mark this specific page as completed for this session to prevent re-running on browser back
       console.log(`[TourManager] Saving completion to session storage`);
       sessionStorage.setItem(`tourCompleted_${pageName}`, 'true');

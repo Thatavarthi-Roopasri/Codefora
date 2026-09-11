@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createAuth, createFirestore } from "../config/firebase.js";
 import { globalOnlineUsers } from "../utils/presenceTracker.js";
-import { getNextFriendCode } from "./profileController.js";
+import { ensureProfileRecord } from "./profileController.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const localProblemsPath = path.join(__dirname, "../data/problems.json");
@@ -22,16 +22,29 @@ async function writeJSON(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 }
 
-export function createAdminController(roomRepository) {
+export function createAdminController(roomRepository, { submissionService, auditService } = {}) {
   const auth = createAuth();
   const db = createFirestore();
+  const recordAudit = (request, action, target, details) => {
+    auditService?.record({ actor: request.adminUser, action, target, details })
+      .catch((error) => console.warn("Admin audit record failed:", error.message));
+  };
 
   return {
+    me: async (request, response) => {
+      return response.json({
+        uid: request.adminUser?.uid || null,
+        email: request.adminUser?.email || null,
+        role: request.adminUser?.isSuperAdmin ? "super-admin" : "admin",
+        isSuperAdmin: Boolean(request.adminUser?.isSuperAdmin)
+      });
+    },
+
     getStats: async (request, response) => {
       try {
         const problems = await readJSON(localProblemsPath);
         const rooms = roomRepository.listAll();
-        
+
         let totalUsers = 0;
         if (auth) {
           // For small user bases, we can list all to get count.
@@ -40,11 +53,17 @@ export function createAdminController(roomRepository) {
           totalUsers = listUsersResult.users.length;
         }
 
+        const submissions = submissionService ? await submissionService.list(1_000) : [];
+        const acceptedSubmissions = submissions.filter((submission) => submission.verdict === "accepted").length;
+
         return response.json({
           totalUsers,
           onlineUsers: globalOnlineUsers.size,
           activeRooms: rooms.length,
           totalProblems: problems.length,
+          totalSubmissions: submissions.length,
+          acceptedSubmissions,
+          acceptanceRate: submissions.length ? Math.round((acceptedSubmissions / submissions.length) * 100) : 0,
           mostSolved: "N/A",
           isSuperAdmin: request.adminUser?.isSuperAdmin || false
         });
@@ -71,12 +90,12 @@ export function createAdminController(roomRepository) {
       try {
         if (!auth) return response.json([]);
 
-        const users = [];
+
         const maxUsersToFetch = 1000;
-        const listUsersResult = await auth.listUsers(maxUsersToFetch); 
+        const listUsersResult = await auth.listUsers(maxUsersToFetch);
         const authUsers = listUsersResult.users;
 
-        // Fetch profiles from Firestore 
+        // Fetch profiles from Firestore
         const profilesMap = {};
         if (db) {
           // Fetch up to 1000 recent profiles to match Auth limits without memory leaking
@@ -89,7 +108,15 @@ export function createAdminController(roomRepository) {
         const usersList = [];
         for (const user of authUsers) {
           let profile = profilesMap[user.uid] || {};
-          
+          if (!profile.friendCode && db && !db.isMock) {
+            profile = await ensureProfileRecord(db, user.uid, {
+              displayName: user.displayName,
+              email: user.email,
+              photoURL: user.photoURL,
+              providerId: user.providerData?.[0]?.providerId || "firebase"
+            });
+          }
+
           usersList.push({
             userId: user.uid,
             friendCode: profile.friendCode || "",
@@ -101,11 +128,12 @@ export function createAdminController(roomRepository) {
             solved: profile.solvedCount || 0,
             status: globalOnlineUsers.has(user.uid) ? "Online" : "Offline",
             role: profile.role || "user",
+            moderationStatus: user.disabled ? "blocked" : (profile.accountStatus || "active"),
             createdAt: user.metadata.creationTime,
             lastActive: user.metadata.lastSignInTime || user.metadata.creationTime
           });
         }
-        
+
         usersList.sort((a, b) => {
           if (a.status === "Online" && b.status !== "Online") return -1;
           if (b.status === "Online" && a.status !== "Online") return 1;
@@ -123,23 +151,76 @@ export function createAdminController(roomRepository) {
         if (!request.adminUser?.isSuperAdmin) {
           return response.status(403).json({ error: "Only Super Admins can manage roles." });
         }
-        
+
         const { id } = request.params;
         const { role } = request.body;
-        
+        if (!["admin", "user"].includes(role)) {
+          return response.status(400).json({ error: "Role must be admin or user." });
+        }
+
         if (!db || db.isMock) return response.status(500).json({ error: "Database not available" });
-        
+
         const userRef = db.collection("users").doc(id);
         const userDoc = await userRef.get();
-        
+
         let profile = userDoc.exists ? userDoc.data().profile || {} : {};
         profile.role = role;
-        
+
         await userRef.set({ profile }, { merge: true });
-        
+        recordAudit(request, "user.role_changed", id, `Role changed to ${role}`);
         return response.json({ success: true, role });
       } catch (err) {
         console.error("Admin updateUserRole failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    updateUserAccountStatus: async (request, response) => {
+      try {
+        if (!request.adminUser?.isSuperAdmin) {
+          return response.status(403).json({ error: "Only Super Admins can moderate accounts." });
+        }
+
+        const { id } = request.params;
+        const status = String(request.body?.status || "").toLowerCase();
+        if (!["active", "suspended", "blocked"].includes(status)) {
+          return response.status(400).json({ error: "Status must be active, suspended, or blocked." });
+        }
+        if (!db || db.isMock || !auth?.updateUser) {
+          return response.status(500).json({ error: "Account moderation is unavailable without Firebase Admin." });
+        }
+
+        const userRef = db.collection("users").doc(id);
+        const userDoc = await userRef.get();
+        const profile = userDoc.exists ? userDoc.data().profile || {} : {};
+        profile.accountStatus = status;
+        profile.moderatedAt = Date.now();
+        profile.moderatedBy = request.adminUser.uid;
+        await userRef.set({ profile }, { merge: true });
+        await auth.updateUser(id, { disabled: status !== "active" });
+
+        recordAudit(request, "user.account_moderated", id, `Account marked ${status}`);
+        return response.json({ success: true, status });
+      } catch (err) {
+        console.error("Admin updateUserAccountStatus failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    getSubmissions: async (_request, response) => {
+      try {
+        return response.json(submissionService ? await submissionService.list(1_000) : []);
+      } catch (err) {
+        console.error("Admin list submissions failed:", err);
+        return response.status(500).json({ error: err.message });
+      }
+    },
+
+    getAuditLog: async (_request, response) => {
+      try {
+        return response.json(auditService ? await auditService.list(200) : []);
+      } catch (err) {
+        console.error("Admin audit log failed:", err);
         return response.status(500).json({ error: err.message });
       }
     },
@@ -153,6 +234,7 @@ export function createAdminController(roomRepository) {
       try {
         const { id } = request.params;
         await roomRepository.delete(id);
+        recordAudit(request, "room.deleted", id, "Room removed");
         return response.json({ success: true });
       } catch (err) {
         return response.status(500).json({ error: err.message });
@@ -165,6 +247,7 @@ export function createAdminController(roomRepository) {
         const problems = await readJSON(localProblemsPath);
         const filtered = problems.filter(p => p.id !== id);
         await writeJSON(localProblemsPath, filtered);
+        recordAudit(request, "problem.deleted", id, "Problem removed");
         return response.json({ success: true });
       } catch (err) {
         return response.status(500).json({ error: err.message });
@@ -176,9 +259,10 @@ export function createAdminController(roomRepository) {
         const { id } = request.params;
         const room = roomRepository.findById(id);
         if (!room) return response.status(404).json({ error: "Room not found" });
-        
+
         room.isLocked = !room.isLocked;
         await roomRepository.save(room);
+        recordAudit(request, room.isLocked ? "room.locked" : "room.unlocked", id, room.name || "");
         return response.json({ success: true, isLocked: room.isLocked });
       } catch (err) {
         return response.status(500).json({ error: err.message });
@@ -191,9 +275,10 @@ export function createAdminController(roomRepository) {
         const problems = await readJSON(localProblemsPath);
         const problem = problems.find(p => p.id === id);
         if (!problem) return response.status(404).json({ error: "Problem not found" });
-        
+
         problem.published = !problem.published;
         await writeJSON(localProblemsPath, problems);
+        recordAudit(request, problem.published ? "problem.published" : "problem.unpublished", id, problem.title || "");
         return response.json({ success: true, published: problem.published });
       } catch (err) {
         return response.status(500).json({ error: err.message });
@@ -204,10 +289,11 @@ export function createAdminController(roomRepository) {
       try {
         const problem = request.body;
         if (!problem.id || !problem.title) return response.status(400).json({ error: "ID and Title are required" });
-        
+
         const problems = await readJSON(localProblemsPath);
         problems.push({ ...problem, published: false });
         await writeJSON(localProblemsPath, problems);
+        recordAudit(request, "problem.created", problem.id, problem.title);
         return response.status(201).json({ success: true });
       } catch (err) {
         return response.status(500).json({ error: err.message });
@@ -221,9 +307,10 @@ export function createAdminController(roomRepository) {
         const problems = await readJSON(localProblemsPath);
         const index = problems.findIndex(p => p.id === id);
         if (index === -1) return response.status(404).json({ error: "Problem not found" });
-        
+
         problems[index] = { ...problems[index], ...updates };
         await writeJSON(localProblemsPath, problems);
+        recordAudit(request, "problem.updated", id, updates.title || problems[index].title || "");
         return response.json({ success: true });
       } catch (err) {
         return response.status(500).json({ error: err.message });

@@ -3,30 +3,40 @@ import express from "express";
 import { createAiController } from "./controllers/aiController.js";
 import { createExecutionController } from "./controllers/executionController.js";
 import { createRoomController } from "./controllers/roomController.js";
+import { createRoomProjectController } from "./controllers/roomProjectController.js";
 import { getEmotions, getEmotionImage, initEmotions } from "./controllers/emotionController.js";
-import { createProfileController } from "./controllers/profileController.js";
+
 import { createCompilerController } from "./controllers/compilerController.js";
 import { createAdminController } from "./controllers/adminController.js";
 import { createProblemController } from "./controllers/problemController.js";
 import { createFeedbackController } from "./controllers/feedbackController.js";
 import { createNotificationController } from "./controllers/notificationController.js";
+import { createDirectMessageController } from "./controllers/directMessageController.js";
 import { createApiRoutes } from "./routes/apiRoutes.js";
 import { AiService } from "./services/aiService.js";
 import { ExecutionService } from "./services/executionService.js";
 import { PistonService } from "./services/pistonService.js";
+import { ProblemJudgeService } from "./services/problemJudgeService.js";
+import { SubmissionService } from "./services/submissionService.js";
+import { AdminAuditService } from "./services/adminAuditService.js";
 import { corsOrigin } from "./config/cors.js";
 
-export function createApp({ roomRepository, roomService, profileController, onRoomCreated }) {
+export function createApp({ roomRepository, roomService, profileController, onRoomCreated, collabDocs }) {
   const app = express();
   const roomController = createRoomController(roomRepository, roomService, profileController, onRoomCreated);
+  const roomProjectController = createRoomProjectController({ roomRepository, roomService, profileController, collabDocs });
   const executionController = createExecutionController(new ExecutionService());
   const aiController = createAiController(new AiService());
   const emotionController = { getEmotions, getEmotionImage, initEmotions };
-  const compilerController = createCompilerController(new PistonService());
-  const adminController = createAdminController(roomRepository);
+  const pistonService = new PistonService();
+  const submissionService = new SubmissionService();
+  const auditService = new AdminAuditService();
+  const compilerController = createCompilerController(pistonService, new ProblemJudgeService(pistonService), submissionService);
+  const adminController = createAdminController(roomRepository, { submissionService, auditService });
   const problemController = createProblemController();
-  const feedbackController = createFeedbackController();
-  const notificationController = createNotificationController();
+  const feedbackController = createFeedbackController({ auditService });
+  const notificationController = createNotificationController({ auditService });
+  const directMessageController = createDirectMessageController();
 
   app.set('trust proxy', 1);
   app.use(cors({ origin: corsOrigin }));
@@ -53,6 +63,8 @@ export function createApp({ roomRepository, roomService, profileController, onRo
 
   app.use("/api", createApiRoutes({ 
     roomController, 
+    roomProjectController,
+    roomRepository,
     executionController, 
     aiController, 
     emotionController, 
@@ -62,6 +74,7 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     problemController,
     feedbackController,
     notificationController
+    ,directMessageController
   }));
 
   app.use((request, response) => {

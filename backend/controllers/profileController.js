@@ -1,13 +1,14 @@
 import { createFirestore, admin } from "../config/firebase.js";
+import { createHash } from "crypto";
 import fs from "fs/promises";
+import path from "path";
 import { readLocalNotifications, writeLocalNotifications } from "../utils/mockNotifications.js";
 import { globalOnlineUsers, userIdToRoomId } from "../utils/presenceTracker.js";
-import path from "path";
-import { fileURLToPath } from "url";
+import { emitFriendsRefresh, emitNotificationRefresh } from "../utils/realtimeEvents.js";
+import { runtimeDataPath } from "../utils/runtimeDataPath.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const localProfilesPath = path.join(__dirname, "../data/manualUsers.json");
-const localWorksPath = path.join(__dirname, "../data/localWorks.json");
+const localProfilesPath = runtimeDataPath("manualUsers.json");
+const localWorksPath = runtimeDataPath("localWorks.json");
 
 async function readLocalUsers() {
   try {
@@ -58,13 +59,510 @@ export async function getNextFriendCode(db, userId) {
   });
 }
 
+function createDefaultProfile(identity = {}) {
+  return {
+    displayName: identity.displayName || identity.email?.split("@")[0] || "Developer",
+    bio: "",
+    theme: "dark",
+    community: "sider",
+    friends: [],
+    activities: [],
+    stats: {},
+    photoURL: identity.photoURL || ""
+  };
+}
+
+export function getWorkMetrics(work = {}) {
+  const files = Array.isArray(work.files) ? work.files : [];
+  const fileCount = files.length;
+  const codeCharacters = files.reduce((total, file) => total + String(file?.code || "").trim().length, 0);
+  const nonEmptyFiles = files.filter((file) => String(file?.code || "").trim().length > 0).length;
+  const contributionCount = Math.max(1, Math.min(10, nonEmptyFiles + Math.floor(codeCharacters / 2000)));
+
+  return { fileCount, codeCharacters, contributionCount };
+}
+
+export function getStableWorkId(userId, work = {}) {
+  if (/^(work-[a-zA-Z0-9_-]{6,80}|room-project:[a-zA-Z0-9_-]{2,40})$/.test(String(work.id || ""))) return String(work.id);
+
+  const workKey = work.originRoomId
+    ? [userId, work.type || "work", work.originRoomId].join(":")
+    : [userId, work.id || "", work.type || "work", work.name || "Untitled work"].join(":");
+  return `work-${createHash("sha256").update(workKey).digest("hex").slice(0, 24)}`;
+}
+
+export function assertWorkOwnership(previousWork, userId) {
+  if (previousWork?.ownerId && previousWork.ownerId !== userId) {
+    const error = new Error("You cannot modify another user's saved work.");
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+export function assertWorkCanBeUpdated(previousWork) {
+  if (previousWork?.readOnly || previousWork?.projectStatus === "completed") {
+    const error = new Error("This project has ended and is read-only.");
+    error.statusCode = 409;
+    throw error;
+  }
+}
+
+export function collapseDuplicateWorks(works) {
+  const latestByKey = new Map();
+
+  for (const work of works) {
+    // A room can have one resumable workspace. Keep the newest snapshot when
+    // older saves used a different generated document id.
+    const projectName = String(work.roomName || work.name || "").trim().toLowerCase();
+    const key = work.sourceWorkId
+      ? `${work.type || "workspace"}:${work.sourceWorkId}`
+      : work.type === "room-project" && projectName
+        ? `${work.type}:${projectName}`
+        : work.originRoomId
+          ? `${work.type || "workspace"}:${work.originRoomId}`
+          : work.id;
+    const previous = latestByKey.get(key);
+    if (!previous || (work.updatedAt || work.createdAt || 0) > (previous.updatedAt || previous.createdAt || 0)) {
+      latestByKey.set(key, work);
+    }
+  }
+
+  return Array.from(latestByKey.values())
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+}
+
+function getSavedWorkGroupKey(work = {}) {
+  const projectName = String(work.roomName || work.name || "").trim().toLowerCase();
+  if (work.sourceWorkId) return `${work.type || "workspace"}:${work.sourceWorkId}`;
+  if (work.type === "room-project" && projectName) return `${work.type}:${projectName}`;
+  if (work.originRoomId) return `${work.type || "workspace"}:${work.originRoomId}`;
+  return work.id || "";
+}
+
+function getDeletedWorkIds(works = [], targetWork = {}) {
+  const targetKey = getSavedWorkGroupKey(targetWork);
+  return works
+    .filter((work) => work.id === targetWork.id || (targetKey && getSavedWorkGroupKey(work) === targetKey))
+    .map((work) => work.id)
+    .filter(Boolean);
+}
+
+export function applyWorkDeletionToProfile(profile = {}, deletedWorkIds = [], remainingWorks = []) {
+  const deletedIds = new Set(deletedWorkIds);
+  const stats = profile.stats || {};
+  const activities = Array.isArray(profile.activities) ? profile.activities : [];
+  const lastWorkSavedAt = remainingWorks.reduce((latest, work) => Math.max(latest, Number(work.updatedAt || work.createdAt || 0)), 0);
+
+  return {
+    ...profile,
+    stats: {
+      ...stats,
+      savedWorks: remainingWorks.length,
+      workContributions: remainingWorks.reduce((total, work) => total + (Number(work.contributionCount) || getWorkMetrics(work).contributionCount), 0),
+      lastWorkSavedAt: lastWorkSavedAt || null
+    },
+    activities: activities.filter((activity) => !deletedIds.has(activity.workId))
+  };
+}
+
+export function applyWorkSaveToProfile(profile = {}, work = {}, previousWork = null) {
+  const now = work.updatedAt || Date.now();
+  const stats = profile.stats || {};
+  const activities = Array.isArray(profile.activities) ? profile.activities : [];
+  const contributionCount = Number(work.contributionCount) || 1;
+  const previousContributionCount = previousWork
+    ? Number(previousWork.contributionCount) || getWorkMetrics(previousWork).contributionCount
+    : 0;
+  const isNewWork = !previousWork;
+  const updatedActivities = activities.filter((activity) => !(activity.type === "work_save" && activity.workId === work.id));
+
+  return {
+    ...profile,
+    stats: {
+      ...stats,
+      savedWorks: (Number(stats.savedWorks) || 0) + (isNewWork ? 1 : 0),
+      workContributions: Math.max(0, (Number(stats.workContributions) || 0) + contributionCount - previousContributionCount),
+      lastWorkSavedAt: now
+    },
+    activities: [
+      {
+        type: "work_save",
+        workId: work.id,
+        text: `Saved ${work.name || "work"}`,
+        subtext: `${work.fileCount || 0} files saved`,
+        timestamp: now,
+        contributionCount
+      },
+      ...updatedActivities
+    ].slice(0, 1000)
+  };
+}
+
+export async function ensureProfileRecord(db, userId, identity = {}) {
+  const now = Date.now();
+
+  if (!db || db.isMock) {
+    const users = await readLocalUsers();
+    const existing = users[userId] || {};
+    const existingProfile = existing.profile || {};
+    const friendCode = existingProfile.friendCode || await getNextFriendCode(db, userId);
+    const profile = {
+      ...createDefaultProfile(identity),
+      ...existingProfile,
+      friendCode,
+      displayName: existingProfile.displayName || identity.displayName || identity.email?.split("@")[0] || "Developer",
+      photoURL: existingProfile.photoURL || identity.photoURL || ""
+    };
+
+    users[userId] = {
+      ...existing,
+      profile,
+      email: existing.email || identity.email || "",
+      authProvider: existing.authProvider || identity.providerId || "",
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: now
+    };
+    await writeLocalUsers(users);
+    return profile;
+  }
+
+  const userRef = db.collection("users").doc(userId);
+  const counterRef = db.collection("counters").doc("users");
+
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(userRef);
+    const existing = snapshot.exists ? snapshot.data() : {};
+    const existingProfile = existing.profile || {};
+    let friendCode = existingProfile.friendCode;
+
+    if (!friendCode) {
+      const counter = await transaction.get(counterRef);
+      const nextCode = counter.exists && counter.data().nextFriendCode
+        ? counter.data().nextFriendCode
+        : 13219873;
+      friendCode = String(nextCode);
+      transaction.set(counterRef, { nextFriendCode: nextCode - 1 }, { merge: true });
+    }
+
+    const profile = {
+      ...createDefaultProfile(identity),
+      ...existingProfile,
+      friendCode,
+      displayName: existingProfile.displayName || identity.displayName || identity.email?.split("@")[0] || "Developer",
+      photoURL: existingProfile.photoURL || identity.photoURL || ""
+    };
+
+    transaction.set(userRef, {
+      profile,
+      email: existing.email || identity.email || "",
+      authProvider: existing.authProvider || identity.providerId || "",
+      createdAt: existing.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: now
+    }, { merge: true });
+    transaction.set(db.collection("friendCodes").doc(friendCode), { uid: userId }, { merge: true });
+
+    return profile;
+  });
+}
+
+export async function saveWorkForUser(db, userId, work = {}) {
+  if (!userId) throw new Error("Missing userId");
+  if (userId.startsWith("guest-")) {
+    const error = new Error("Continue with Google to save your work.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const roomName = String(work.roomName || "").trim();
+  const effectiveWork = roomName && work.originRoomId
+    ? { ...work, name: roomName }
+    : work;
+  const metrics = getWorkMetrics(effectiveWork);
+  const now = Date.now();
+  const workId = getStableWorkId(userId, effectiveWork);
+
+  if (!db || db.isMock) {
+    const works = await readLocalWorks();
+    const previousWork = works[workId] || null;
+    assertWorkOwnership(previousWork, userId);
+    assertWorkCanBeUpdated(previousWork);
+    const savedWork = {
+      ...effectiveWork,
+      ...metrics,
+      ownerId: userId,
+      id: workId,
+      createdAt: previousWork?.createdAt || work.createdAt || now,
+      updatedAt: now,
+      storage: {
+        mode: "mock",
+        label: "Local/mock JSON",
+        savedAt: now
+      },
+    };
+    works[savedWork.id] = savedWork;
+    await writeLocalWorks(works);
+
+    const users = await readLocalUsers();
+    const existing = users[userId] || {};
+    const profile = applyWorkSaveToProfile(existing.profile || createDefaultProfile(), savedWork, previousWork);
+    users[userId] = { ...existing, profile, updatedAt: now };
+    await writeLocalUsers(users);
+    return savedWork;
+  }
+
+  const workRef = db.collection("works").doc(workId);
+  const userRef = db.collection("users").doc(userId);
+  let savedWork;
+
+  await db.runTransaction(async (transaction) => {
+    const [workSnap, userSnap] = await Promise.all([
+      transaction.get(workRef),
+      transaction.get(userRef),
+    ]);
+    const previousWork = workSnap.exists ? workSnap.data() : null;
+    assertWorkOwnership(previousWork, userId);
+    assertWorkCanBeUpdated(previousWork);
+    savedWork = {
+      ...effectiveWork,
+      ...metrics,
+      ownerId: userId,
+      id: workId,
+      createdAt: previousWork?.createdAt || work.createdAt || now,
+      updatedAt: now,
+      storage: {
+        mode: "firestore",
+        label: "Real Firestore",
+        savedAt: now
+      },
+    };
+    const data = userSnap.exists ? userSnap.data() : {};
+    const profile = applyWorkSaveToProfile(data.profile || createDefaultProfile(), savedWork, previousWork);
+
+    transaction.set(workRef, savedWork, { merge: true });
+    transaction.set(userRef, { profile, updatedAt: now }, { merge: true });
+  });
+
+  return savedWork;
+}
+
+export async function getSavedWorkForUser(db, userId, workId) {
+  const cleanUserId = String(userId || "").trim();
+  const cleanWorkId = String(workId || "").trim();
+  if (!cleanUserId) throw new Error("Missing userId");
+  if (!cleanWorkId) throw new Error("Missing workId");
+
+  if (!db || db.isMock) {
+    const works = await readLocalWorks();
+    const work = works[cleanWorkId] || null;
+    if (!work) return null;
+    assertWorkOwnership(work, cleanUserId);
+    return work.ownerId === cleanUserId ? work : null;
+  }
+
+  const workSnap = await db.collection("works").doc(cleanWorkId).get();
+  if (!workSnap.exists) return null;
+  const work = workSnap.data();
+  assertWorkOwnership(work, cleanUserId);
+  return work.ownerId === cleanUserId ? work : null;
+}
+
+export async function endSavedWorkForUser(db, userId, workId) {
+  const cleanUserId = String(userId || "").trim();
+  const cleanWorkId = String(workId || "").trim();
+  if (!cleanUserId) throw new Error("Missing userId");
+  if (!cleanWorkId) throw new Error("Missing workId");
+  const now = Date.now();
+
+  if (!db || db.isMock) {
+    const works = await readLocalWorks();
+    const previousWork = works[cleanWorkId] || null;
+    if (!previousWork) {
+      const error = new Error("Saved work not found.");
+      error.statusCode = 404;
+      throw error;
+    }
+    assertWorkOwnership(previousWork, cleanUserId);
+    const savedWork = {
+      ...previousWork,
+      projectStatus: "completed",
+      readOnly: true,
+      completedAt: previousWork.completedAt || now,
+      updatedAt: now,
+    };
+    works[cleanWorkId] = savedWork;
+    await writeLocalWorks(works);
+
+    const users = await readLocalUsers();
+    const existing = users[cleanUserId] || {};
+    const profile = existing.profile || createDefaultProfile();
+    const activities = Array.isArray(profile.activities) ? profile.activities : [];
+    users[cleanUserId] = {
+      ...existing,
+      profile: {
+        ...profile,
+        activities: [
+          {
+            type: "work_end",
+            workId: cleanWorkId,
+            text: `Ended ${savedWork.name || "project"}`,
+            subtext: "Saved as read-only",
+            timestamp: now,
+          },
+          ...activities.filter((activity) => !(activity.type === "work_end" && activity.workId === cleanWorkId)),
+        ].slice(0, 1000),
+      },
+      updatedAt: now,
+    };
+    await writeLocalUsers(users);
+    return savedWork;
+  }
+
+  const workRef = db.collection("works").doc(cleanWorkId);
+  const userRef = db.collection("users").doc(cleanUserId);
+  let savedWork;
+
+  await db.runTransaction(async (transaction) => {
+    const [workSnap, userSnap] = await Promise.all([
+      transaction.get(workRef),
+      transaction.get(userRef),
+    ]);
+    if (!workSnap.exists) {
+      const error = new Error("Saved work not found.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const previousWork = workSnap.data();
+    assertWorkOwnership(previousWork, cleanUserId);
+    savedWork = {
+      ...previousWork,
+      projectStatus: "completed",
+      readOnly: true,
+      completedAt: previousWork.completedAt || now,
+      updatedAt: now,
+    };
+    const data = userSnap.exists ? userSnap.data() : {};
+    const profile = data.profile || createDefaultProfile();
+    const activities = Array.isArray(profile.activities) ? profile.activities : [];
+
+    transaction.set(workRef, savedWork, { merge: true });
+    transaction.set(userRef, {
+      profile: {
+        ...profile,
+        activities: [
+          {
+            type: "work_end",
+            workId: cleanWorkId,
+            text: `Ended ${savedWork.name || "project"}`,
+            subtext: "Saved as read-only",
+            timestamp: now,
+          },
+          ...activities.filter((activity) => !(activity.type === "work_end" && activity.workId === cleanWorkId)),
+        ].slice(0, 1000),
+      },
+      updatedAt: now,
+    }, { merge: true });
+  });
+
+  return savedWork;
+}
+
+export async function deleteSavedWorkForUser(db, userId, workId) {
+  const cleanUserId = String(userId || "").trim();
+  const cleanWorkId = String(workId || "").trim();
+  if (!cleanUserId) throw new Error("Missing userId");
+  if (!cleanWorkId) throw new Error("Missing workId");
+  const now = Date.now();
+
+  if (!db || db.isMock) {
+    const works = await readLocalWorks();
+    const targetWork = works[cleanWorkId] || null;
+    if (!targetWork) {
+      const error = new Error("Saved work not found.");
+      error.statusCode = 404;
+      throw error;
+    }
+    assertWorkOwnership(targetWork, cleanUserId);
+
+    const userWorks = Object.values(works).filter((work) => work.ownerId === cleanUserId);
+    const deletedWorkIds = getDeletedWorkIds(userWorks, targetWork);
+    for (const id of deletedWorkIds) delete works[id];
+    await writeLocalWorks(works);
+
+    const users = await readLocalUsers();
+    const existing = users[cleanUserId] || {};
+    const remainingWorks = Object.values(works).filter((work) => work.ownerId === cleanUserId);
+    users[cleanUserId] = {
+      ...existing,
+      profile: applyWorkDeletionToProfile(existing.profile || createDefaultProfile(), deletedWorkIds, remainingWorks),
+      updatedAt: now
+    };
+    await writeLocalUsers(users);
+
+    return { deletedWorkIds, deletedCount: deletedWorkIds.length };
+  }
+
+  const targetSnap = await db.collection("works").doc(cleanWorkId).get();
+  if (!targetSnap.exists) {
+    const error = new Error("Saved work not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+  const targetWork = targetSnap.data();
+  assertWorkOwnership(targetWork, cleanUserId);
+
+  const querySnapshot = await db.collection("works").where("ownerId", "==", cleanUserId).get();
+  const userWorks = [];
+  querySnapshot.forEach((doc) => userWorks.push({ ...doc.data(), id: doc.id }));
+  const deletedWorkIds = getDeletedWorkIds(userWorks, { ...targetWork, id: cleanWorkId });
+  const remainingWorks = userWorks.filter((work) => !deletedWorkIds.includes(work.id));
+  const userRef = db.collection("users").doc(cleanUserId);
+  const userSnap = await userRef.get();
+  const existing = userSnap.exists ? userSnap.data() : {};
+  const batch = db.batch();
+
+  for (const id of deletedWorkIds) {
+    batch.delete(db.collection("works").doc(id));
+  }
+  batch.set(userRef, {
+    profile: applyWorkDeletionToProfile(existing.profile || createDefaultProfile(), deletedWorkIds, remainingWorks),
+    updatedAt: now
+  }, { merge: true });
+  await batch.commit();
+
+  return { deletedWorkIds, deletedCount: deletedWorkIds.length };
+}
+
 export function createProfileController() {
   const db = createFirestore();
 
   return {
+    saveWorkForUser: (userId, work) => saveWorkForUser(db, userId, work),
+    getSavedWorkForUser: (userId, workId) => getSavedWorkForUser(db, userId, workId),
+    endSavedWorkForUser: (userId, workId) => endSavedWorkForUser(db, userId, workId),
+    deleteSavedWorkForUser: (userId, workId) => deleteSavedWorkForUser(db, userId, workId),
+
+    bootstrap: async (request, response) => {
+      try {
+        const firebaseUser = request.firebaseUser;
+        const profile = await ensureProfileRecord(db, firebaseUser.uid, {
+          displayName: firebaseUser.name,
+          email: firebaseUser.email,
+          photoURL: firebaseUser.picture,
+          providerId: firebaseUser.firebase?.sign_in_provider || "firebase"
+        });
+        return response.json({ ...profile, id: firebaseUser.uid });
+      } catch (error) {
+        console.warn(`Profile bootstrap failed: ${error.message}`);
+        return response.status(500).json({ error: "Could not prepare your profile." });
+      }
+    },
+
     get: async (request, response) => {
       const userId = String(request.params.userId || "").trim();
       if (!userId) return response.status(400).json({ error: "Missing userId" });
+      if (userId.startsWith("guest-")) return response.json({});
 
       try {
         const isNumericCode = /^\d{8}$/.test(userId);
@@ -85,6 +583,17 @@ export function createProfileController() {
           }
 
           if (targetUser) {
+            const signedInName = String(request.firebaseUser?.name || request.firebaseUser?.email?.split("@")[0] || "").trim();
+            const isOwnSignedInProfile = request.firebaseUser?.uid && request.firebaseUser.uid === trueUserId;
+            const targetProfile = targetUser.profile || {};
+            if (isOwnSignedInProfile && signedInName && (!targetProfile.displayName || targetProfile.displayName === "Someone")) {
+              targetUser.profile = {
+                ...targetProfile,
+                displayName: signedInName
+              };
+              users[trueUserId] = targetUser;
+              await writeLocalUsers(users);
+            }
             let presence = "offline";
             if (globalOnlineUsers.has(trueUserId) && globalOnlineUsers.get(trueUserId).size > 0) {
               presence = userIdToRoomId.has(trueUserId) ? "in-room" : "online";
@@ -131,11 +640,18 @@ export function createProfileController() {
         }
         if (docSnap && docSnap.exists) {
           const data = docSnap.data();
+          const signedInName = String(request.firebaseUser?.name || request.firebaseUser?.email?.split("@")[0] || "").trim();
+          const isOwnSignedInProfile = request.firebaseUser?.uid && request.firebaseUser.uid === trueUserId;
           if (!data.profile?.friendCode) {
              const newFriendCode = await getNextFriendCode(db, trueUserId);
              const updatedProfile = { ...data.profile, friendCode: newFriendCode };
              await db.collection("users").doc(trueUserId).set({ profile: updatedProfile }, { merge: true });
              data.profile = updatedProfile;
+          }
+          if (isOwnSignedInProfile && signedInName && (!data.profile?.displayName || data.profile.displayName === "Someone")) {
+            const updatedProfile = { ...(data.profile || {}), displayName: signedInName };
+            await db.collection("users").doc(trueUserId).set({ profile: updatedProfile }, { merge: true });
+            data.profile = updatedProfile;
           }
           
           let presence = "offline";
@@ -172,19 +688,45 @@ export function createProfileController() {
       }
       
       if (!userId) return response.status(400).json({ error: "Missing userId" });
+      if (userId.startsWith("guest-")) return response.status(403).json({ error: "Continue with Google to save a profile." });
       try {
         if (!db || db.isMock) {
           const users = await readLocalUsers();
+          const existingProfile = (users[userId] || {}).profile || {};
+          const incomingFriends = Array.isArray(profile.friends) ? profile.friends : null;
+          const shouldPreserveFriends =
+            Array.isArray(existingProfile.friends) &&
+            existingProfile.friends.length > 0 &&
+            (!incomingFriends || incomingFriends.length === 0);
           users[userId] = {
             ...(users[userId] || {}),
-            profile: { ...((users[userId] || {}).profile || {}), ...profile },
+            profile: {
+              ...existingProfile,
+              ...profile,
+              friends: shouldPreserveFriends ? existingProfile.friends : (incomingFriends || existingProfile.friends || [])
+            },
             updatedAt: Date.now()
           };
           await writeLocalUsers(users);
           return response.json({ ok: true });
         }
 
-        await db.collection("users").doc(userId).set({ profile, updatedAt: Date.now() }, { merge: true });
+        const userRef = db.collection("users").doc(userId);
+        const snapshot = await userRef.get();
+        const existingProfile = snapshot.exists ? snapshot.data().profile || {} : {};
+        const incomingFriends = Array.isArray(profile.friends) ? profile.friends : null;
+        const shouldPreserveFriends =
+          Array.isArray(existingProfile.friends) &&
+          existingProfile.friends.length > 0 &&
+          (!incomingFriends || incomingFriends.length === 0);
+        await userRef.set({
+          profile: {
+            ...existingProfile,
+            ...profile,
+            friends: shouldPreserveFriends ? existingProfile.friends : (incomingFriends || existingProfile.friends || [])
+          },
+          updatedAt: Date.now()
+        }, { merge: true });
         return response.json({ ok: true });
       } catch (error) {
         console.warn(`Profile save failed: ${error.message}`);
@@ -196,29 +738,41 @@ export function createProfileController() {
       const userId = String(request.params.userId || "").trim();
       const work = request.body || {};
       if (!userId) return response.status(400).json({ error: "Missing userId" });
-      
-      const newWork = {
-        ...work,
-        ownerId: userId,
-        id: work.id || `work-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        createdAt: work.createdAt || Date.now(),
-        updatedAt: Date.now()
-      };
 
       try {
-        if (!db || db.isMock) {
-          const works = await readLocalWorks();
-          works[newWork.id] = newWork;
-          await writeLocalWorks(works);
-          return response.json({ ok: true, work: newWork });
-        }
-
-        await db.collection("works").doc(newWork.id).set(newWork, { merge: true });
-        
-        return response.json({ ok: true, work: newWork });
+        const savedWork = await saveWorkForUser(db, userId, work);
+        return response.json({ ok: true, work: savedWork });
       } catch (error) {
         console.warn(`Work save failed: ${error.message}`);
-        return response.status(500).json({ error: error.message });
+        return response.status(error.statusCode || 500).json({ error: error.message });
+      }
+    },
+
+    endWork: async (request, response) => {
+      const userId = String(request.params.userId || "").trim();
+      const workId = String(request.params.workId || "").trim();
+      if (!userId || !workId) return response.status(400).json({ error: "Missing work details." });
+
+      try {
+        const work = await endSavedWorkForUser(db, userId, workId);
+        return response.json({ ok: true, work });
+      } catch (error) {
+        console.warn(`Work end failed: ${error.message}`);
+        return response.status(error.statusCode || 500).json({ error: error.message });
+      }
+    },
+
+    deleteWork: async (request, response) => {
+      const userId = String(request.params.userId || "").trim();
+      const workId = String(request.params.workId || "").trim();
+      if (!userId || !workId) return response.status(400).json({ error: "Missing work details." });
+
+      try {
+        const result = await deleteSavedWorkForUser(db, userId, workId);
+        return response.json({ ok: true, ...result });
+      } catch (error) {
+        console.warn(`Work delete failed: ${error.message}`);
+        return response.status(error.statusCode || 500).json({ error: error.message });
       }
     },
 
@@ -275,8 +829,7 @@ export function createProfileController() {
           const works = await readLocalWorks();
           const userWorks = Object.values(works)
             .filter(w => w.ownerId === userId)
-            .sort((a, b) => b.createdAt - a.createdAt);
-          return response.json(userWorks);
+          return response.json(collapseDuplicateWorks(userWorks));
         }
 
         const querySnapshot = await db.collection("works")
@@ -286,10 +839,7 @@ export function createProfileController() {
         const works = [];
         querySnapshot.forEach(doc => works.push(doc.data()));
         
-        // Sort descending by createdAt
-        works.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        
-        return response.json(works);
+        return response.json(collapseDuplicateWorks(works));
       } catch (error) {
         console.warn(`Works list failed: ${error.message}`);
         return response.status(500).json({ error: error.message });
@@ -439,7 +989,7 @@ export function createProfileController() {
           
           if (!target) {
             // Search by friendCode
-            const foundEntry = Object.entries(users).find(([uid, u]) => u.profile?.friendCode === query);
+            const foundEntry = Object.entries(users).find(([, u]) => u.profile?.friendCode === query);
             if (foundEntry) {
                targetId = foundEntry[0];
                target = foundEntry[1];
@@ -507,12 +1057,12 @@ export function createProfileController() {
               friendCode: ""
             });
           }
-        } catch (authErr) {
+        } catch {
           // Fall through to 404
         }
         
         return response.status(404).json({ error: "User not found" });
-      } catch (error) {
+      } catch {
         return response.status(500).json({ error: "Search failed" });
       }
     },
@@ -557,6 +1107,7 @@ export function createProfileController() {
             createdAt: Date.now()
           });
           await writeLocalNotifications(allNotifs);
+          emitNotificationRefresh(targetUserId, "friend-request");
           return response.json({ ok: true });
         }
         
@@ -577,7 +1128,9 @@ export function createProfileController() {
               await admin.auth().getUser(targetUserId);
               targetExists = true;
             }
-          } catch (e) {}
+          } catch {
+            // Ignore missing Firebase Auth user lookups.
+          }
         }
 
         if (!targetExists) {
@@ -612,6 +1165,7 @@ export function createProfileController() {
           createdAt: Date.now()
         });
 
+        emitNotificationRefresh(targetUserId, "friend-request");
         return response.json({ ok: true });
       } catch (error) {
         console.error(`Failed to send friend request: ${error.message}`);
@@ -663,6 +1217,11 @@ export function createProfileController() {
           notif.status = action;
           notif.read = true;
           await writeLocalNotifications(allNotifs);
+          emitNotificationRefresh(userId, "friend-request-handled");
+          if (action === "accept") {
+            emitFriendsRefresh(userId, "friend-request-accepted");
+            emitFriendsRefresh(notif.senderId, "friend-request-accepted");
+          }
           
           return response.json({ ok: true });
         }
@@ -699,6 +1258,11 @@ export function createProfileController() {
         }
 
         await notifRef.update({ status: action, read: true });
+        emitNotificationRefresh(userId, "friend-request-handled");
+        if (action === "accept") {
+          emitFriendsRefresh(userId, "friend-request-accepted");
+          emitFriendsRefresh(senderId, "friend-request-accepted");
+        }
 
         return response.json({ ok: true });
       } catch (error) {
@@ -723,6 +1287,8 @@ export function createProfileController() {
             users[friendId].profile.friends = users[friendId].profile.friends.filter(f => f.id !== userId);
           }
           await writeLocalUsers(users);
+          emitFriendsRefresh(userId, "friend-removed");
+          emitFriendsRefresh(friendId, "friend-removed");
           return response.json({ ok: true });
         }
 
@@ -747,6 +1313,8 @@ export function createProfileController() {
           await friendDocRef.set({ profile: { ...friendProfile, friends: newFriendFriends }, updatedAt: Date.now() }, { merge: true });
         }
 
+        emitFriendsRefresh(userId, "friend-removed");
+        emitFriendsRefresh(friendId, "friend-removed");
         return response.json({ ok: true });
       } catch (error) {
         console.error(`Failed to remove friend: ${error.message}`);

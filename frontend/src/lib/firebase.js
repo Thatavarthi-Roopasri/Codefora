@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { browserLocalPersistence, getAuth, GoogleAuthProvider, setPersistence, signInWithPopup, signOut } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { clearCodeforaSession } from "./session";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -15,38 +15,58 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = typeof window !== "undefined" ? getAnalytics(app) : null;
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.authDomain &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId
+);
+
+// Initialize Firebase only when the environment has a complete client configuration.
+const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+
 
 // Initialize Auth
-export const auth = getAuth(app);
+export const auth = app ? getAuth(app) : null;
+const authPersistenceReady = auth
+  ? setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn("Could not enable persistent sign-in:", error);
+  })
+  : Promise.resolve();
 
 // Initialize Firestore Database
-export const db = getFirestore(app);
+export const db = app ? getFirestore(app) : null;
 
 // Initialize Storage
-export const storage = getStorage(app);
+export const storage = app ? getStorage(app) : null;
 
 // Initialize Google Auth Provider
-export const googleProvider = new GoogleAuthProvider();
+export const googleProvider = app ? new GoogleAuthProvider() : null;
 
 // ===== AUTHENTICATION FUNCTIONS =====
 
 // Google Sign-In Function
-export const signInWithGoogle = () => {
+export const signInWithGoogle = async () => {
+  if (!auth) {
+    throw new Error("Firebase auth is not configured for this local environment.");
+  }
+  await authPersistenceReady;
   return signInWithPopup(auth, googleProvider);
 };
 
 // Sign Out Function
-export const logoutUser = () => {
-  return signOut(auth);
+export const logoutUser = async () => {
+  if (auth) {
+    await signOut(auth);
+  }
+
+  clearCodeforaSession();
 };
 
 // ===== STORAGE FUNCTIONS =====
 
 // Upload file to Firebase Storage
-export const uploadFile = async (userId, fileName, file) => {
+export const uploadFile = async (userId, fileName) => {
   console.log("Would upload file:", userId, fileName);
   return null;
 };
@@ -69,7 +89,7 @@ export const listUserFiles = async (userId) => {
 };
 
 // Upload room data (code, files) to Storage
-export const uploadRoomData = async (roomId, dataFileName, data) => {
+export const uploadRoomData = async (roomId, dataFileName) => {
   console.log("Would upload room data:", roomId, dataFileName);
   return null;
 };

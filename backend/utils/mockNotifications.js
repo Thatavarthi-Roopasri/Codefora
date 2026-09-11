@@ -1,9 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { runtimeDataPath } from "./runtimeDataPath.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MOCK_DB_PATH = path.join(__dirname, "../data/manualNotifications.json");
+const MOCK_DB_PATH = runtimeDataPath("manualNotifications.json");
 
 export async function readLocalNotifications() {
   try {

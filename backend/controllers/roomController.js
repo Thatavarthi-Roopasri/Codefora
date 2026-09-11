@@ -29,13 +29,16 @@ export function createRoomController(roomRepository, roomService, profileControl
 
   return {
     rateLimit,
-    list: (_request, response) => {
+    list: (request, response) => {
       const all = roomRepository.listAll();
-      response.json(all.map((room) => roomService.publicRoom(room)));
+      response.json(all.map((room) => roomService.publicRoom(room, request.firebaseUser?.uid || null)));
     },
     create: async (request, response) => {
       try {
-        const room = roomService.createRoom(request.body || {});
+        const room = roomService.createRoom({
+          ...(request.body || {}),
+          userId: request.firebaseUser?.uid || request.body?.userId || null,
+        });
         await roomRepository.save(room);
         
         if (room.ownerUserId && profileController?.incrementStat) {
@@ -44,7 +47,7 @@ export function createRoomController(roomRepository, roomService, profileControl
 
         if (onRoomCreated) onRoomCreated();
 
-        response.status(201).json({ ...roomService.publicRoom(room), hostToken: room.hostToken, inviteCode: room.inviteCode });
+        response.status(201).json({ ...roomService.snapshot(room), hostToken: room.hostToken, inviteCode: room.inviteCode });
       } catch (error) {
         response.status(400).json({ error: error.message });
       }
@@ -56,7 +59,8 @@ export function createRoomController(roomRepository, roomService, profileControl
       if (room.visibility === "private") {
         const { inviteCode, hostToken } = request.query;
         const normalizedInvite = inviteCode ? String(inviteCode).replace(/\s+/g, "").trim().toUpperCase() : null;
-        if (room.inviteCode !== normalizedInvite && room.hostToken !== hostToken) {
+        const isOwner = Boolean(request.firebaseUser?.uid && room.ownerUserId && request.firebaseUser.uid === room.ownerUserId);
+        if (!isOwner && room.inviteCode !== normalizedInvite && room.hostToken !== hostToken) {
            return response.status(403).json({ error: "Private room requires a valid invite code" });
         }
       }

@@ -15,14 +15,15 @@ export const getEmotions = async (req, res) => {
 export const getEmotionImage = async (req, res) => {
   try {
     const { emotionId } = req.params;
-    const fileStream = getEmotionFile(emotionId);
+    const emotionFile = getEmotionFile(emotionId);
 
-    if (!fileStream) {
+    if (!emotionFile) {
       return res.status(404).json({ error: 'Emotion not found' });
     }
 
-    res.setHeader('Content-Type', 'image/png');
-    fileStream.pipe(res);
+    res.setHeader('Content-Type', emotionFile.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    emotionFile.stream.pipe(res);
   } catch (error) {
     console.error('Error fetching emotion image:', error);
     res.status(500).json({ error: 'Failed to fetch emotion image' });

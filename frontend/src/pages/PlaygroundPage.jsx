@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Loader2, Save, Play, Code2, Layout, Terminal, Globe, ChevronRight, Plus, Upload, X as XIcon, Download } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Loader2, Save, Play, Code2, Layout, Globe, Plus, Upload, X as XIcon, Download } from 'lucide-react';
 import JSZip from "jszip";
 import Editor from "@monaco-editor/react";
 import { Navbar } from "../components/Navbar";
 import { ConsolePanel } from "../components/room/ConsolePanel";
+import { LoginRequiredModal } from "../components/LoginRequiredModal";
+import { SaveWorkNameModal } from "../components/SaveWorkNameModal";
+import { AppToast } from "../components/AppToast";
 import { api } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
+import { isGuestUser } from "../lib/userAccess";
 import { buildPreview } from "../lib/preview";
-import { useTheme } from "../hooks/useTheme";
 import { BOILERPLATES } from "../components/room/EditorPanel";
 
 const FILE_TYPES = [
@@ -30,10 +33,8 @@ const FILE_TYPES = [
 ];
 
 export function PlaygroundPage() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { theme } = useTheme();
   const [files, setFiles] = useState([
     { name: 'index.html', language: 'html', code: '<!-- HTML Playground -->\n<div class="hero">\n  <h1>Codefora Playground</h1>\n  <p>Start coding instantly.</p>\n</div>' },
     { name: 'styles.css', language: 'css', code: '.hero {\n  text-align: center;\n  padding: 50px;\n  background: #0f172a;\n  color: white;\n  border-radius: 12px;\n}' },
@@ -45,6 +46,10 @@ export function PlaygroundPage() {
   const [stdin, setStdin] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [saveToast, setSaveToast] = useState({ message: "", tone: "info" });
+  const [showLoginRequired, setShowLoginRequired] = useState(false);
+  const [showSaveNameModal, setShowSaveNameModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [newFileType, setNewFileType] = useState(FILE_TYPES[0].language);
@@ -56,6 +61,24 @@ export function PlaygroundPage() {
   const [isConsoleOpen, setIsConsoleOpen] = useState(true);
   const resizeStart = useRef({ y: 0, height: 300 });
   const fileInputRef = useRef(null);
+  const saveToastTimerRef = useRef(null);
+
+  function showSaveToast(message, tone = "info") {
+    setSaveToast({ message, tone });
+    if (saveToastTimerRef.current) {
+      window.clearTimeout(saveToastTimerRef.current);
+    }
+    saveToastTimerRef.current = window.setTimeout(() => {
+      setSaveToast({ message: "", tone: "info" });
+      saveToastTimerRef.current = null;
+    }, 3000);
+  }
+
+  function describeSavedWork(work) {
+    const storageLabel = work?.storage?.label || (work?.storage?.mode === "firestore" ? "Real Firestore" : "local/mock storage");
+    const savedTime = new Date(work?.storage?.savedAt || work?.updatedAt || Date.now()).toLocaleString();
+    return `Saved to ${storageLabel} at ${savedTime}`;
+  }
 
   useEffect(() => {
     if (location.state?.initialFiles) {
@@ -65,6 +88,14 @@ export function PlaygroundPage() {
       }
     }
   }, [location.state]);
+
+  useEffect(() => {
+    return () => {
+      if (saveToastTimerRef.current) {
+        window.clearTimeout(saveToastTimerRef.current);
+      }
+    };
+  }, []);
 
 
 
@@ -205,21 +236,32 @@ export function PlaygroundPage() {
     }
   };
 
-  const handleSave = async () => {
-    if (!user) {
-      alert("Please login to save your work.");
+  const requestSave = () => {
+    if (isGuestUser(user)) {
+      setSaveStatus("Login required");
+      showSaveToast("Please login to save your work.", "warning");
+      setShowLoginRequired(true);
       return;
     }
+    setShowSaveNameModal(true);
+  };
+
+  const handleSave = async (projectName) => {
     setIsSaving(true);
+    setSaveStatus("");
     try {
-      await api.saveWork(user.uid, {
-        name: "Playground Project",
+      const response = await api.saveWork(user.uid, {
+        name: projectName,
         files,
         type: "playground"
       });
-      alert("Project saved to 'My Works'!");
+      const saveDetail = describeSavedWork(response.work);
+      setSaveStatus(saveDetail);
+      showSaveToast(saveDetail, "success");
+      setShowSaveNameModal(false);
     } catch (err) {
-      alert("Failed to save: " + err.message);
+      setSaveStatus(`Save failed: ${err.message}`);
+      showSaveToast(`Save failed: ${err.message}`, "error");
     } finally {
       setIsSaving(false);
     }
@@ -249,6 +291,19 @@ export function PlaygroundPage() {
 
   return (
     <div className="playground-container" style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#020817' }}>
+      <LoginRequiredModal
+        open={showLoginRequired}
+        onClose={() => setShowLoginRequired(false)}
+        message="Please login to save your work."
+      />
+      <SaveWorkNameModal
+        open={showSaveNameModal}
+        defaultName={activeName ? activeName.replace(/\.[^.]+$/, "") : "Playground Project"}
+        isSaving={isSaving}
+        onClose={() => setShowSaveNameModal(false)}
+        onSave={handleSave}
+      />
+      <AppToast message={saveToast.message} tone={saveToast.tone} />
       {isResizing && <div style={{ position: 'fixed', inset: 0, zIndex: 9999, cursor: 'row-resize' }} />}
       <Navbar />
       
@@ -337,13 +392,14 @@ export function PlaygroundPage() {
           </button>
           <button 
             className="button secondary compact tour-pg-save" 
-            onClick={handleSave}
+            onClick={requestSave}
             disabled={isSaving}
             style={{ gap: '8px' }}
           >
             <Save size={16} />
             {isSaving ? "Saving..." : "Save Work"}
           </button>
+          {saveStatus && <span role="status" style={{ fontSize: '12px', color: saveStatus.startsWith("Saved") ? 'var(--success)' : saveStatus === "Login required" ? '#fbbf24' : 'var(--error)' }}>{saveStatus}</span>}
         </div>
       </div>
 

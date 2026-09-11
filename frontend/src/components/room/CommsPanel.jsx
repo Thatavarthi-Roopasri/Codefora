@@ -1,4 +1,4 @@
-import { Bot, ImagePlus, MessageSquare, Send, Sparkles, X as XIcon, Paperclip, ChevronsRight, CheckCheck } from "lucide-react";
+import {  MessageSquare, Send, Sparkles, Paperclip, ChevronsRight, CheckCheck } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import sticker1 from "../../../assets/sticker1.jpeg";
 import sticker2 from "../../../assets/sticker2.jpeg";
@@ -16,16 +16,11 @@ function stickerFor(id) {
 
 export function CommsPanel({
   messages,
-  aiMessages,
   me,
   permissions,
-  aiThinking,
   onSendChat,
   onSendSticker,
-  onAskAi,
   onClearNotifications,
-  activeTab,
-  onSelectTab,
   isOpen,
   onClose,
   participantsCount

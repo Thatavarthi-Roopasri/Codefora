@@ -4,7 +4,7 @@ import '../styles/heatmap.css';
 /**
  * GitHub-style contribution heatmap for the last 365 days.
  */
-export function ActivityHeatmap({ activities = [], solvedProblems = [] }) {
+export function ActivityHeatmap({ activities = [], solvedProblems = [], savedWorks = [] }) {
   const [selectedRange, setSelectedRange] = useState('past12');
   const [selectedTheme, setSelectedTheme] = useState('emerald');
   const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
@@ -13,35 +13,57 @@ export function ActivityHeatmap({ activities = [], solvedProblems = [] }) {
   // Aggregate activity counts by YYYY-MM-DD key
   const activityMap = useMemo(() => {
     const map = {};
+    const savedWorkIds = new Set(
+      Array.isArray(savedWorks)
+        ? savedWorks.map(work => work?.id).filter(Boolean)
+        : []
+    );
 
     // 1. Process explicit activities array
     if (Array.isArray(activities)) {
       activities.forEach(act => {
         if (!act) return;
+        if (act.type === 'work_save' && act.workId && savedWorkIds.has(act.workId)) return;
         const ts = act.timestamp || act.createdAt || act.date;
         if (!ts) return;
         const d = new Date(ts);
         if (isNaN(d.getTime())) return;
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        map[key] = (map[key] || 0) + 1;
+        const amount = Number(act.contributionCount || act.count || 1);
+        map[key] = (map[key] || 0) + (Number.isFinite(amount) && amount > 0 ? amount : 1);
       });
     }
 
-    // 2. Process solved problems if timestamps available or attach to activities
+    // 2. Process saved work records so persisted projects are reflected in profiles
+    if (Array.isArray(savedWorks)) {
+      savedWorks.forEach(work => {
+        if (!work) return;
+        const ts = work.updatedAt || work.createdAt || work.date;
+        if (!ts) return;
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const amount = Number(work.contributionCount || 1);
+        map[key] = (map[key] || 0) + (Number.isFinite(amount) && amount > 0 ? amount : 1);
+      });
+    }
+
+    // 3. Process solved problems if timestamps available or attach to activities
     if (Array.isArray(solvedProblems)) {
       solvedProblems.forEach(sp => {
         if (typeof sp === 'object' && sp.solvedAt) {
           const d = new Date(sp.solvedAt);
           if (!isNaN(d.getTime())) {
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            map[key] = (map[key] || 0) + 1;
+            const amount = Number(sp.contributionCount || 1);
+            map[key] = (map[key] || 0) + (Number.isFinite(amount) && amount > 0 ? amount : 1);
           }
         }
       });
     }
 
     return map;
-  }, [activities, solvedProblems]);
+  }, [activities, savedWorks, solvedProblems]);
 
   // Build Grid (Weeks x 7 Days)
   const { weeks, monthLabels } = useMemo(() => {

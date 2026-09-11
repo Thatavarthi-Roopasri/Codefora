@@ -1,25 +1,56 @@
-import { ChevronRight, Plus, Users, Search as SearchIcon, Bell, Zap, Code, Lock } from "lucide-react";
-import { useEffect, useState, useMemo } from "react";
-import { useLocation, useNavigate, NavLink } from "react-router-dom";
+import {
+  ChevronDown,
+  Cloud,
+  Code,
+  ExternalLink,
+  Folder,
+  Lock,
+  MoreVertical,
+  Plus,
+  Radio,
+  Search as SearchIcon,
+  SlidersHorizontal,
+  Trash2,
+  Users,
+  Zap
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { BrandButton } from "../components/BrandButton";
-import { trackEvent } from "../lib/analytics";
-
-import { socket } from "../lib/socket";
-import { saveHostToken, saveInviteCode, saveUsername } from "../lib/navigation";
-import { useAuth } from "../hooks/useAuth";
-import { useMemo as useMemoDeps } from "react";
-import bg1 from "../../assets/bg1.mp4";
-
-
 import { Navbar } from "../components/Navbar";
 import FeedbackModal from "../components/FeedbackModal";
+import { trackEvent } from "../lib/analytics";
+import { socket } from "../lib/socket";
+import { getHostToken, saveHostToken, saveInviteCode, saveUsername } from "../lib/navigation";
+import { useAuth } from "../hooks/useAuth";
+import bg1 from "../../assets/bg1.mp4";
+import bonfireImage from "../../assets/bonfire.jpeg";
+import sceneOneImage from "../../assets/scene1.jpeg";
+import sceneTwoImage from "../../assets/scene2.jpeg";
+import sceneThreeImage from "../../assets/scene3.jpeg";
+
+const roomImages = [bonfireImage, sceneOneImage, sceneTwoImage, sceneThreeImage];
+const sortOptions = ["Newest First", "Most Popular", "Least Full"];
+
+function formatUpdatedAt(value) {
+  if (!value) return "Updated just now";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Updated just now";
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `Updated ${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `Updated ${days}d ago`;
+}
 
 export function RoomsPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [rooms, setRooms] = useState([]);
+  const [savedWorks, setSavedWorks] = useState([]);
   const [joinRoomTarget, setJoinRoomTarget] = useState(null);
   const [codeEntry, setCodeEntry] = useState("");
   const [joinError, setJoinError] = useState("");
@@ -29,38 +60,44 @@ export function RoomsPage() {
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [projectSearchTerm, setProjectSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("Newest First");
-  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [roomTab, setRoomTab] = useState("All Rooms");
+  const [projectTab, setProjectTab] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resumingWorkId, setResumingWorkId] = useState(null);
+  const [openProjectMenuId, setOpenProjectMenuId] = useState(null);
+  const [deleteProjectTarget, setDeleteProjectTarget] = useState(null);
+  const [deletingWorkId, setDeletingWorkId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackData, setFeedbackData] = useState({ username: "", type: "general" });
+  const [toastMsg, setToastMsg] = useState("");
 
-  async function handleOpenProfile(u) {
-    if (u.userId) {
-      try {
-        const profile = await api.getProfile(u.userId);
-        setSelectedProfile({ ...u, ...profile });
-        return;
-      } catch (err) {
-        // fallback to transient user object
-        console.warn("Could not load profile from server:", err.message || err);
-      }
+  const refreshRooms = useCallback(() => {
+    return api.listRooms().then(setRooms).catch(console.error);
+  }, []);
+
+  const refreshSavedWorks = useCallback(() => {
+    if (!user?.uid) {
+      setSavedWorks([]);
+      return Promise.resolve();
     }
-    setSelectedProfile(u);
-  }
+    return api.getWorks(user.uid)
+      .then((works) => setSavedWorks(Array.isArray(works) ? works : []))
+      .catch(() => setSavedWorks([]));
+  }, [user?.uid]);
 
   useEffect(() => {
-    api.listRooms().then(setRooms).catch(console.error);
+    if (loading) return undefined;
+    refreshRooms();
+    refreshSavedWorks();
     socket.connect();
-    
-    const handleRoomsUpdate = (data) => {
-      console.log("[RoomsPage] Received rooms:update", data?.length);
-      setRooms(data || []);
-    };
-    
+
+    const handleRoomsUpdate = () => refreshRooms();
     socket.on("rooms:update", handleRoomsUpdate);
-    
-    // Handle messages from redirection (like being kicked)
+
     const params = new URLSearchParams(location.search);
     const msg = params.get("message");
     if (msg) {
@@ -68,27 +105,77 @@ export function RoomsPage() {
       navigate(location.pathname, { replace: true });
     }
 
-    // Handle feedback modal trigger
-    const feedback = params.get("feedback");
-    if (feedback === "true") {
+    if (params.get("feedback") === "true") {
       setFeedbackData({
         username: params.get("username") || "",
         type: params.get("type") || "room_leave"
       });
       setShowFeedbackModal(true);
-      // Clean up URL
-      const newParams = new URLSearchParams(location.search);
-      newParams.delete("feedback");
-      newParams.delete("username");
-      newParams.delete("type");
-      const newSearch = newParams.toString();
+      params.delete("feedback");
+      params.delete("username");
+      params.delete("type");
+      const newSearch = params.toString();
       navigate(location.pathname + (newSearch ? `?${newSearch}` : ""), { replace: true });
     }
 
     return () => socket.off("rooms:update", handleRoomsUpdate);
-  }, [location.search, navigate]);
+  }, [location.pathname, location.search, navigate, loading, refreshRooms, refreshSavedWorks]);
 
-  const isRoomsPage = location.pathname !== "/problems";
+  const roomsPerPage = 6;
+
+  const filteredRooms = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const nextRooms = rooms.filter((room) => {
+      const roomNameText = String(room.name || "").toLowerCase();
+      const roomIdText = String(room.id || "").toLowerCase();
+      const hostText = String(room.hostName || room.host || "").toLowerCase();
+      const matchesSearch = !term || roomNameText.includes(term) || roomIdText.includes(term) || hostText.includes(term);
+      const matchesTab =
+        roomTab === "All Rooms" ||
+        (roomTab === "Public" && room.visibility !== "private") ||
+        (roomTab === "Private" && room.visibility === "private") ||
+        (roomTab === "My Rooms" && user?.uid && room.hostUserId === user.uid);
+      return matchesSearch && matchesTab;
+    });
+
+    nextRooms.sort((a, b) => {
+      if (sortBy === "Most Popular") return (b.users || 0) - (a.users || 0);
+      if (sortBy === "Least Full") return (a.users || 0) - (b.users || 0);
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    return nextRooms;
+  }, [rooms, searchTerm, sortBy, roomTab, user?.uid]);
+
+  const filteredProjects = useMemo(() => {
+    const term = projectSearchTerm.trim().toLowerCase();
+    return savedWorks.filter((work) => {
+      const completed = work.projectStatus === "completed" || work.readOnly;
+      const matchesTab =
+        projectTab === "All" ||
+        (projectTab === "In Progress" && !completed) ||
+        (projectTab === "Completed" && completed);
+      const matchesSearch = !term || String(work.name || "Saved Work").toLowerCase().includes(term);
+      return matchesTab && matchesSearch;
+    });
+  }, [savedWorks, projectSearchTerm, projectTab]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRooms.length / roomsPerPage));
+  const visibleRooms = filteredRooms.slice((currentPage - 1) * roomsPerPage, currentPage * roomsPerPage);
+  const visibleProjects = filteredProjects.slice(0, 3);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, sortBy, roomTab]);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
+
+  function showToast(msg) {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3000);
+  }
 
   function generateGuestName() {
     const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -116,20 +203,17 @@ export function RoomsPage() {
       });
       saveHostToken(room.id, room.hostToken);
       saveInviteCode(room.id, room.inviteCode);
-      trackEvent("room_create", { 
-        name: cleanName, 
+      trackEvent("room_create", {
+        name: cleanName,
         visibility: isPublic ? "public" : "private",
-        room_id: room.id 
+        room_id: room.id
       });
-      setStatus("Room created. Opening workspace...");
       setShowCreateModal(false);
-      // Reset form
       setRoomName("");
       setMaxMembers("");
       setIsPublic(true);
       setStatus("");
-      // navigate to new URL pattern
-      if (room.visibility === "private") navigate(`/code/private/${room.id}`); else navigate(`/code/${room.id}`);
+      navigate(room.visibility === "private" ? `/code/private/${room.id}` : `/code/${room.id}`);
     } catch (error) {
       setStatus(`Could not create room: ${error.message}`);
     } finally {
@@ -138,10 +222,15 @@ export function RoomsPage() {
   }
 
   function joinRoom(id) {
-    const cleanId = id.trim();
-    setJoinRoomTarget({ id: cleanId });
+    setJoinRoomTarget({ id: id.trim() });
     setJoinError("");
     setCodeEntry("");
+  }
+
+  function openRoomAsCurrentUser(room) {
+    saveUsername(user?.displayName || user?.email?.split("@")[0] || generateGuestName());
+    trackEvent("room_join", { room_id: room.id, visibility: room.visibility });
+    navigate(room.visibility === "private" ? `/code/private/${room.id}` : `/code/${room.id}`);
   }
 
   async function confirmJoinWithCode(event) {
@@ -149,10 +238,15 @@ export function RoomsPage() {
     setJoinError("");
     try {
       const code = String(codeEntry || "").trim().replace(/\s+/g, "").toUpperCase();
-      if (!code) return setJoinError("Please enter the room code.");
-      // Validate with backend
+      if (!code) {
+        setJoinError("Please enter the room code.");
+        return;
+      }
       const room = await api.getRoomByInviteCode(code);
-      if (!room || room.id !== joinRoomTarget.id) return setJoinError("Invalid room code for selected room.");
+      if (!room || room.id !== joinRoomTarget.id) {
+        setJoinError("Invalid room code for selected room.");
+        return;
+      }
       saveUsername(user?.displayName || user?.email?.split("@")[0] || generateGuestName());
       saveInviteCode(room.id, code);
       setJoinRoomTarget(null);
@@ -162,309 +256,460 @@ export function RoomsPage() {
     }
   }
 
+  async function resumeSavedWork(work) {
+    if (!user?.uid || !work?.id || resumingWorkId) {
+      showToast("Sign in again to resume this work.");
+      return;
+    }
+    if (work.projectStatus === "completed" || work.readOnly) {
+      showToast("This project has ended and cannot be resumed or edited.");
+      return;
+    }
+
+    setResumingWorkId(work.id);
+    try {
+      const response = await api.resumeSavedWorkRoom(user.uid, work.id);
+      const reopenedRoom = response.room;
+      if (!reopenedRoom?.id) throw new Error("Resume did not return a room.");
+      saveHostToken(reopenedRoom.id, reopenedRoom.hostToken);
+      saveInviteCode(reopenedRoom.id, reopenedRoom.inviteCode);
+      navigate(`/room/${encodeURIComponent(reopenedRoom.id)}`, {
+        state: { skipRoomGuide: true, resumedProjectId: work.id }
+      });
+    } catch (error) {
+      showToast(error.message || "Could not reopen this saved work");
+    } finally {
+      setResumingWorkId(null);
+    }
+  }
+
+  async function deleteSavedProject() {
+    if (!user?.uid || !deleteProjectTarget?.id || deletingWorkId) return;
+
+    const target = deleteProjectTarget;
+    setDeletingWorkId(target.id);
+    try {
+      const result = await api.deleteWork(user.uid, target.id);
+      const deletedIds = new Set(result.deletedWorkIds || [target.id]);
+      setSavedWorks((items) => items.filter((work) => !deletedIds.has(work.id)));
+      setDeleteProjectTarget(null);
+      setOpenProjectMenuId(null);
+      showToast("Project deleted permanently.");
+      window.dispatchEvent(new CustomEvent("codefora:saved-works-changed", { detail: { userId: user.uid } }));
+      try {
+        localStorage.setItem("codefora_saved_works_changed", JSON.stringify({ userId: user.uid, at: Date.now() }));
+      } catch {
+        // Ignore storage errors; current tab is already updated.
+      }
+    } catch (error) {
+      showToast(error.message || "Could not delete this project.");
+    } finally {
+      setDeletingWorkId(null);
+    }
+  }
+
   return (
-    <main style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden', background: '#000' }}>
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          zIndex: 0,
-          opacity: 1,
-          filter: 'var(--home-video-filter)'
-        }}
-      >
+    <main className="rooms-dashboard">
+      <video className="rooms-dashboard-video" autoPlay loop muted playsInline>
         <source src={bg1} type="video/mp4" />
       </video>
+      <div className="rooms-dashboard-overlay" />
 
-      {/* Premium Mist/Blur Layer Overlay */}
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: 0,
-        background: 'rgba(2, 8, 18, 0.4)',
-        backdropFilter: 'blur(6px) brightness(0.8)',
-        WebkitBackdropFilter: 'blur(6px) brightness(0.8)',
-        pointerEvents: 'none'
-      }} />
-
-
-      <div className="rooms-page-shell" style={{ position: 'relative', zIndex: 1, background: 'transparent' }}>
+      <div className="rooms-page-shell">
         <Navbar />
 
-      <section className="rooms-layout">
-        <section className="rooms-main">
-          <div className="rooms-list-header">
-            <div>
-              <h2>Live Rooms</h2>
-              <p>Join a room and start coding together in real-time.</p>
-            </div>
-            <div className="rooms-list-controls">
-              <label className="search-input">
-                <SearchIcon size={16} />
-                <input placeholder="Search by room name or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              </label>
-              <select className="rooms-sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="Newest First">Newest First</option>
-                <option value="Most Popular">Most Popular</option>
-                <option value="Least Full">Least Full</option>
-              </select>
-              <button className="button button-primary tour-create-room" onClick={() => setShowCreateModal(true)} style={{ backgroundColor: 'var(--primary-color)', borderColor: 'var(--primary-color)', color: '#fff' }}>
-                <Plus size={18} /> Create Room
-              </button>
-            </div>
+        <section className="rooms-dashboard-content">
+          <div className="rooms-hero-strip" aria-hidden="true">
+            <img src={bonfireImage} alt="" />
           </div>
 
-          <div className="rooms-list tour-rooms-list" style={{ minHeight: '300px' }}>
-            {(() => {
-              const filtered = rooms.filter((room) => {
-                const term = searchTerm.trim().toLowerCase();
-                if (!term) return true;
-                return room.name.toLowerCase().includes(term) || String(room.id || "").toLowerCase().includes(term);
-              });
-              
-              filtered.sort((a, b) => {
-                if (sortBy === "Most Popular") {
-                  return (b.users || 0) - (a.users || 0);
-                } else if (sortBy === "Least Full") {
-                  return (a.users || 0) - (b.users || 0);
-                } else {
-                  // Newest First
-                  return (b.createdAt || 0) - (a.createdAt || 0); 
-                }
-              });
-
-              if (filtered.length === 0) {
-                return (
-                  <div className="rooms-empty-state">
-                    <Users size={48} />
-                    <h3>No rooms available</h3>
-                    <p>Be the first to create a room and start a coding session!</p>
-                  </div>
-                );
-              }
-
-              return filtered.map((room) => (
-                <article className="rooms-card" key={room.id}>
-                  <div className="rooms-card-icon">
-                    {room.visibility === 'private' ? <Lock size={24} /> : <Code size={24} />}
-                  </div>
-                  <div className="rooms-card-content">
-                    <div>
-                      <h4>{room.name} <span style={{fontSize: "0.8rem", color: "var(--text-muted)", marginLeft: "8px", fontWeight: "normal"}}>({room.id})</span></h4>
-                      <span className="rooms-card-meta">
-                        Host: {room.hostName || room.host} • 
-                        Visibility: {room.visibility === 'private' ? 'Private' : 'Public'} • 
-                        Status: <span className={room.status === 'idle' ? 'rooms-status-idle' : 'rooms-status-active'}>{room.status === 'idle' ? 'Idle' : 'Active'}</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="rooms-card-meta-right">
-                    <div className="rooms-card-avatar" style={{ background: 'var(--surface-color)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}>
-                      {(room.hostName || room.host || '').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase()}
-                    </div>
-                    <span className="rooms-card-members">
-                      <Users size={16} /> {room.users}/{room.max}
-                      {room.users >= room.max && <span style={{ marginLeft: "8px", color: "#ff6b6b", fontWeight: "bold" }}>FULL</span>}
-                    </span>
-                    <button 
-                      className="button button-join" 
-                      disabled={room.users >= room.max}
-                      onClick={() => {
-                        if (room.visibility === 'private') {
-                          joinRoom(room.id);
-                        } else {
-                          trackEvent("room_join", { room_id: room.id, visibility: "public" });
-                          navigate(`/code/${room.id}`);
-                        }
-                      }}
-                    >
-                      {room.users >= room.max ? "Full" : "Join"}
-                    </button>
-                  </div>
-                </article>
-              ));
-            })()}
-          </div>
-
-          <div className="rooms-pagination">
-            <button className="pagination-btn">&lt;</button>
-            <button className="pagination-btn active">1</button>
-            <button className="pagination-btn">2</button>
-            <button className="pagination-btn">3</button>
-            <button className="pagination-btn">...</button>
-            <button className="pagination-btn">8</button>
-            <button className="pagination-btn">&gt;</button>
-          </div>
-        </section>
-      </section>
-
-      {showCreateModal && (
-        <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Create a room">
-          <form className="profile-modal-card" onSubmit={(e) => { e.preventDefault(); createRoom(); }}>
-            <div className="profile-modal-header">
-              <h3>Create a New Room</h3>
-            </div>
-            
-            <label className="profile-input-group tour-room-name">
-              Room Name
-              <input
-                autoFocus
-                value={roomName}
-                onChange={(e) => setRoomName(e.target.value)}
-                placeholder="Enter room name"
-              />
+          <div className="rooms-command-bar">
+            <label className="rooms-search-field">
+              <SearchIcon size={17} />
+              <input placeholder="Search by room name or ID..." value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
             </label>
-
-            <label className="profile-input-group tour-room-size">
-              Room Size (Members)
-              <select value={maxMembers} onChange={(e) => setMaxMembers(e.target.value)} required>
-                <option value="" disabled>Select max size</option>
-                {[1, 2, 3, 4, 5, 6, 7].map(num => (
-                  <option key={num} value={num}>{num} {num === 1 ? 'Member' : 'Members'}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="profile-input-group">
-              Room Mode
-              <div className="room-mode-toggle tour-room-mode" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "8px" }}>
-                <button
-                  type="button"
-                  style={{
-                    padding: "16px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    borderRadius: "8px",
-                    border: isPublic ? "2px solid var(--primary)" : "1px solid var(--line)",
-                    background: isPublic ? "var(--primary)" : "var(--field)",
-                    color: isPublic ? "#1b1020" : "var(--text)",
-                    fontWeight: "800",
-                    cursor: "pointer",
-                    transition: "all 180ms ease"
-                  }}
-                  onClick={() => setIsPublic(true)}
-                >
-                  <Zap size={16} /> Public
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    padding: "16px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
-                    borderRadius: "8px",
-                    border: !isPublic ? "2px solid var(--primary)" : "1px solid var(--line)",
-                    background: !isPublic ? "var(--primary)" : "var(--field)",
-                    color: !isPublic ? "#1b1020" : "var(--text)",
-                    fontWeight: "800",
-                    cursor: "pointer",
-                    transition: "all 180ms ease"
-                  }}
-                  onClick={() => setIsPublic(false)}
-                >
-                  <Lock size={16} /> Private
-                </button>
-              </div>
-            </label>
-
-            {status && <p className={`form-status ${status.includes("Could not") ? "error" : ""}`}>{status}</p>}
-
-            <div className="profile-modal-footer">
+            <div className="rooms-sort-menu" onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setSortMenuOpen(false);
+            }}>
+              <SlidersHorizontal size={16} />
               <button
                 type="button"
-                className="button secondary"
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setStatus("");
-                  setRoomName("");
-                  setMaxMembers("");
-                  setIsPublic(true);
-                }}
-                disabled={creating}
+                className="rooms-sort-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={sortMenuOpen}
+                onClick={() => setSortMenuOpen((open) => !open)}
               >
-                Cancel
+                {sortBy}
+                <ChevronDown size={16} />
               </button>
-              <button type="submit" className="button primary" disabled={creating}>
-                {creating ? "Creating..." : "Create Room"}
-              </button>
+              {sortMenuOpen && (
+                <div className="rooms-sort-options" role="listbox" aria-label="Sort rooms">
+                  {sortOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="option"
+                      aria-selected={sortBy === option}
+                      className={sortBy === option ? "active" : ""}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setSortBy(option);
+                        setSortMenuOpen(false);
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          </form>
-        </div>
-      )}
+            <button className="rooms-action-btn rooms-action-btn-orange tour-create-room" type="button" onClick={() => setShowCreateModal(true)}>
+              <Plus size={18} /> Create Room
+            </button>
+          </div>
 
-      {joinRoomTarget && (
-        <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Enter room code">
-          <form className="profile-modal-card" onSubmit={confirmJoinWithCode}>
-            <div className="profile-modal-header">
-              <h3>Enter Room Code for {joinRoomTarget.id}</h3>
-            </div>
-            <label className="profile-input-group">
-              Room Code
-              <input
-                autoFocus
-                value={codeEntry}
-                onChange={(event) => {
-                  setCodeEntry(event.target.value);
-                  setJoinError("");
-                }}
-                placeholder="Enter code"
-              />
-            </label>
-            {joinError && <p className="form-status error">{joinError}</p>}
-            <div className="profile-modal-footer">
-              <button type="button" className="button secondary" onClick={() => setJoinRoomTarget(null)}>
-                Cancel
-              </button>
-              <button type="submit" className="button primary">
-                Enter
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {selectedProfile && (
-        <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="User profile">
-          <div className="profile-modal-card">
-            <div className="profile-modal-header">
-              <h3>{selectedProfile.name}</h3>
-            </div>
-            <div className="profile-content">
-              <div className="profile-avatar" style={{ background: selectedProfile.color || '#444' }}>{(selectedProfile.name||'').split(' ').map(s=>s[0]).slice(0,2).join('')}</div>
-              <div className="profile-meta">
-                <p><strong>Name:</strong> {selectedProfile.name}</p>
-                <p><strong>Bio:</strong> {selectedProfile.bio || 'No bio available'}</p>
-                <p><strong>Joined:</strong> {selectedProfile.joinedAt ? new Date(selectedProfile.joinedAt).toLocaleString() : 'Unknown'}</p>
+          <section className="rooms-dashboard-panel tour-rooms-list">
+            <div className="rooms-panel-header">
+              <div className="rooms-title-row">
+                <Radio size={20} />
+                <h2>Live Rooms</h2>
               </div>
             </div>
-            <div className="profile-modal-footer">
-              <button type="button" className="button primary" onClick={() => setSelectedProfile(null)}>Close</button>
+            <div className="rooms-tabs" role="tablist" aria-label="Room filters">
+              {["All Rooms", "Public", "Private", "My Rooms"].map((tab) => (
+                <button key={tab} type="button" className={roomTab === tab ? "active" : ""} onClick={() => setRoomTab(tab)}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="rooms-card-grid">
+              {visibleRooms.length === 0 ? (
+                <div className="rooms-empty-state">
+                  <Users size={42} />
+                  <h3>No rooms available</h3>
+                  <p>Start a live coding room whenever you are ready.</p>
+                </div>
+              ) : (
+                visibleRooms.map((room, index) => {
+                  const canOpenWithoutCode = room.visibility !== "private" || room.canJoinWithoutCode || Boolean(getHostToken(room.id));
+                  const hostName = room.hostName || room.host || "Codefora";
+                  return (
+                    <article className="rooms-showcase-card" key={room.id}>
+                      <img src={roomImages[index % roomImages.length]} alt="" />
+                      <div className="rooms-showcase-shade" />
+                      <span className={`rooms-visibility-pill ${room.visibility === "private" ? "private" : "public"}`}>
+                        {room.visibility === "private" ? "Private" : "Public"}
+                      </span>
+                      <div className="rooms-showcase-content">
+                        <h3>{room.name}</h3>
+                        <div className="rooms-room-meta">
+                          <span>{room.id}</span>
+                          <span>Host: {hostName}</span>
+                          <span><Users size={14} /> {room.users || 0}/{room.max || 0}</span>
+                        </div>
+                        <div className="rooms-tag-row">
+                          <span>C++</span>
+                          <span>Python</span>
+                          <span>+2</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="rooms-action-btn rooms-action-btn-orange rooms-open-btn"
+                          disabled={(room.users || 0) >= (room.max || 0)}
+                          onClick={() => {
+                            if (canOpenWithoutCode) openRoomAsCurrentUser(room);
+                            else joinRoom(room.id);
+                          }}
+                        >
+                          {(room.users || 0) >= (room.max || 0) ? "Full" : "Open"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="rooms-pagination">
+                <button className="pagination-btn" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>
+                  &lt;
+                </button>
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                  <button key={page} className={`pagination-btn ${currentPage === page ? "active" : ""}`} onClick={() => setCurrentPage(page)}>
+                    {page}
+                  </button>
+                ))}
+                <button className="pagination-btn" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>
+                  &gt;
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="rooms-dashboard-panel">
+            <div className="rooms-projects-header">
+              <div className="rooms-title-row">
+                <Folder size={21} />
+                <h2>Projects</h2>
+              </div>
+              <div className="rooms-project-tools">
+                <label className="rooms-project-search">
+                  <SearchIcon size={15} />
+                  <input placeholder="Search projects..." value={projectSearchTerm} onChange={(event) => setProjectSearchTerm(event.target.value)} />
+                </label>
+                <button className="rooms-action-btn rooms-action-btn-orange" type="button" onClick={() => setShowCreateModal(true)}>
+                  <Plus size={17} /> New Project
+                </button>
+              </div>
+            </div>
+            <div className="rooms-tabs" role="tablist" aria-label="Project filters">
+              {["All", "In Progress", "Completed"].map((tab) => (
+                <button key={tab} type="button" className={projectTab === tab ? "active" : ""} onClick={() => setProjectTab(tab)}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="rooms-project-grid">
+              {visibleProjects.length === 0 ? (
+                <div className="rooms-empty-state rooms-project-empty">
+                  <Folder size={38} />
+                  <h3>No saved projects</h3>
+                  <p>Your saved room work will appear here.</p>
+                </div>
+              ) : (
+                visibleProjects.map((work) => {
+                  const completed = work.projectStatus === "completed" || work.readOnly;
+                  const fileCount = work.fileCount || work.files?.length || 0;
+                  return (
+                    <article className="rooms-project-card" key={work.id}>
+                      <div className={`rooms-project-icon ${completed ? "completed" : ""}`}>
+                        {completed ? <Cloud size={27} /> : <Code size={27} />}
+                      </div>
+                      <div className="rooms-project-info">
+                        <h3>{work.name || "Saved Work"}</h3>
+                        <span className={completed ? "completed" : "active"}>
+                          {completed ? "Completed" : "In Progress"}
+                        </span>
+                        <p>{formatUpdatedAt(work.updatedAt || work.createdAt)}</p>
+                        <div className="rooms-tag-row">
+                          <span>{fileCount} files</span>
+                          <span>{work.type === "room-project" ? "Room" : "Workspace"}</span>
+                        </div>
+                      </div>
+                      <button
+                        className="rooms-icon-btn"
+                        type="button"
+                        aria-label="Project actions"
+                        aria-expanded={openProjectMenuId === work.id}
+                        onClick={() => setOpenProjectMenuId((current) => current === work.id ? null : work.id)}
+                      >
+                        <MoreVertical size={18} />
+                      </button>
+                      {openProjectMenuId === work.id && (
+                        <div className="rooms-project-menu" role="menu">
+                          {work.originRoomId && !completed ? (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                setOpenProjectMenuId(null);
+                                resumeSavedWork(work);
+                              }}
+                            >
+                              <ExternalLink size={14} /> Resume
+                            </button>
+                          ) : (
+                            <span className="rooms-project-menu-disabled">
+                              {completed ? "Ended - cannot edit" : "No room resume"}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setOpenProjectMenuId(null);
+                              navigate("/profile");
+                            }}
+                          >
+                            <Folder size={14} /> View in Profile
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="rooms-project-menu-danger"
+                            onClick={() => {
+                              setOpenProjectMenuId(null);
+                              setDeleteProjectTarget(work);
+                            }}
+                          >
+                            <Trash2 size={14} /> Delete Project
+                          </button>
+                        </div>
+                      )}
+                      {work.originRoomId && (
+                        completed ? (
+                          <span className="rooms-ended-pill">Ended</span>
+                        ) : (
+                          <button
+                            className="rooms-project-resume"
+                            type="button"
+                            onClick={() => resumeSavedWork(work)}
+                            disabled={resumingWorkId === work.id}
+                          >
+                            {resumingWorkId === work.id ? "Opening" : "Resume"} <ExternalLink size={13} />
+                          </button>
+                        )
+                      )}
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+          </section>
+        </section>
+
+        {showCreateModal && (
+          <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Create a room">
+            <form className="profile-modal-card" onSubmit={(event) => { event.preventDefault(); createRoom(); }}>
+              <div className="profile-modal-header">
+                <h3>Create a New Room</h3>
+              </div>
+
+              <label className="profile-input-group tour-room-name">
+                Room Name
+                <input autoFocus value={roomName} onChange={(event) => setRoomName(event.target.value)} placeholder="Enter room name" />
+              </label>
+
+              <label className="profile-input-group tour-room-size">
+                Room Size (Members)
+                <select value={maxMembers} onChange={(event) => setMaxMembers(event.target.value)} required>
+                  <option value="" disabled>Select max size</option>
+                  {[1, 2, 3, 4, 5, 6, 7].map((num) => (
+                    <option key={num} value={num}>{num} {num === 1 ? "Member" : "Members"}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="profile-input-group">
+                Room Mode
+                <div className="room-mode-toggle tour-room-mode">
+                  <button type="button" className={isPublic ? "active" : ""} onClick={() => setIsPublic(true)}>
+                    <Zap size={16} /> Public
+                  </button>
+                  <button type="button" className={!isPublic ? "active" : ""} onClick={() => setIsPublic(false)}>
+                    <Lock size={16} /> Private
+                  </button>
+                </div>
+              </label>
+
+              {status && <p className={`form-status ${status.includes("Could not") ? "error" : ""}`}>{status}</p>}
+
+              <div className="profile-modal-footer">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setStatus("");
+                    setRoomName("");
+                    setMaxMembers("");
+                    setIsPublic(true);
+                  }}
+                  disabled={creating}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="button primary" disabled={creating}>
+                  {creating ? "Creating..." : "Create Room"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {joinRoomTarget && (
+          <div className="profile-modal-overlay" role="dialog" aria-modal="true" aria-label="Enter room code">
+            <form className="profile-modal-card" onSubmit={confirmJoinWithCode}>
+              <div className="profile-modal-header">
+                <h3>Enter Room Code for {joinRoomTarget.id}</h3>
+              </div>
+              <label className="profile-input-group">
+                Room Code
+                <input
+                  autoFocus
+                  value={codeEntry}
+                  onChange={(event) => {
+                    setCodeEntry(event.target.value);
+                    setJoinError("");
+                  }}
+                  placeholder="Enter code"
+                />
+              </label>
+              {joinError && <p className="form-status error">{joinError}</p>}
+              <div className="profile-modal-footer">
+                <button type="button" className="button secondary" onClick={() => setJoinRoomTarget(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="button primary">
+                  Enter
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {deleteProjectTarget && (
+          <div
+            className="profile-modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Permanently delete project"
+            onClick={() => {
+              if (!deletingWorkId) setDeleteProjectTarget(null);
+            }}
+          >
+            <div className="profile-modal-card" onClick={(event) => event.stopPropagation()}>
+              <div className="profile-modal-header">
+                <h3>Permanently delete project?</h3>
+              </div>
+              <p style={{ color: "rgba(255,255,255,0.72)", lineHeight: 1.55, margin: "0 0 18px" }}>
+                This will permanently delete "{deleteProjectTarget.name || "Saved Work"}" from your projects and Profile saved work.
+              </p>
+              <div className="profile-modal-footer">
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setDeleteProjectTarget(null)}
+                  disabled={Boolean(deletingWorkId)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={deleteSavedProject}
+                  disabled={Boolean(deletingWorkId)}
+                  style={{ background: "#ef4444", color: "#fff" }}
+                >
+                  {deletingWorkId ? "Deleting..." : "Delete"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <FeedbackModal 
-        isOpen={showFeedbackModal} 
-        onClose={() => setShowFeedbackModal(false)}
-        username={feedbackData.username}
-        type={feedbackData.type}
-      />
+        {toastMsg && <div className="rooms-toast">{toastMsg}</div>}
+
+        <FeedbackModal
+          isOpen={showFeedbackModal}
+          onClose={() => setShowFeedbackModal(false)}
+          username={feedbackData.username}
+          type={feedbackData.type}
+        />
       </div>
     </main>
   );

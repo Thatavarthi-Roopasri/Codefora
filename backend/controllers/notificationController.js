@@ -1,7 +1,8 @@
-import { createFirestore, admin } from "../config/firebase.js";
+import { createFirestore } from "../config/firebase.js";
 import { readLocalNotifications, writeLocalNotifications } from "../utils/mockNotifications.js";
+import { emitNotificationRefresh } from "../utils/realtimeEvents.js";
 
-export function createNotificationController() {
+export function createNotificationController({ auditService } = {}) {
   const db = createFirestore();
 
   return {
@@ -9,11 +10,12 @@ export function createNotificationController() {
       try {
         const userId = request.params.userId;
         if (!userId) return response.status(400).json({ error: "Missing userId" });
-        const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
-        
+        const now = Date.now();
+
+
         if (!db || db.isMock) {
           const allNotifs = await readLocalNotifications();
-          const userNotifs = allNotifs.filter(n => n.userId === userId && n.createdAt >= fortyEightHoursAgo);
+          const userNotifs = allNotifs.filter(n => n.userId === userId && (n.expiresAt || (n.type === "direct_message" ? n.createdAt + (4 * 24 * 60 * 60 * 1000) : n.createdAt + (48 * 60 * 60 * 1000))) >= now);
           userNotifs.sort((a, b) => b.createdAt - a.createdAt);
           return response.json(userNotifs.slice(0, 100));
         }
@@ -27,7 +29,8 @@ export function createNotificationController() {
         const notifications = [];
         snapshot.forEach(doc => {
           const data = doc.data();
-          if (data.createdAt >= fortyEightHoursAgo) {
+          const expiresAt = data.expiresAt || data.createdAt + (data.type === "direct_message" ? 4 * 24 * 60 * 60 * 1000 : 48 * 60 * 60 * 1000);
+          if (expiresAt >= now) {
             notifications.push({ id: doc.id, ...data });
           } else {
             // Delete old notifications to clean up the database
@@ -60,6 +63,7 @@ export function createNotificationController() {
             }
           }
           if (updated) await writeLocalNotifications(allNotifs);
+          if (updated) emitNotificationRefresh(userId, "notifications-read");
           return response.json({ success: true });
         }
 
@@ -77,13 +81,14 @@ export function createNotificationController() {
             .where("userId", "==", userId)
             .where("read", "==", false)
             .get();
-          
+
           snapshot.forEach(doc => {
             batch.update(doc.ref, { read: true });
           });
         }
 
         await batch.commit();
+        emitNotificationRefresh(userId, "notifications-read");
         return response.json({ success: true });
       } catch (err) {
         console.error("Failed to mark notification as read:", err);
@@ -108,13 +113,16 @@ export function createNotificationController() {
               read: false,
               createdAt: Date.now()
             });
+            emitNotificationRefresh(uid, "announcement");
           }
           await writeLocalNotifications(allNotifs);
+          auditService?.record({ actor: request.adminUser, action: "announcement.sent", target: `${userIds.length} users`, details: message })
+            .catch((error) => console.warn("Announcement audit record failed:", error.message));
           return response.json({ success: true, count: userIds.length });
         }
 
         // Firestore batch allows up to 500 operations. We will chunk them.
-        const chunkArray = (arr, size) => 
+        const chunkArray = (arr, size) =>
           Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
             arr.slice(i * size, i * size + size)
           );
@@ -135,7 +143,10 @@ export function createNotificationController() {
           }
           await batch.commit();
         }
+        userIds.forEach((uid) => emitNotificationRefresh(uid, "announcement"));
 
+        auditService?.record({ actor: request.adminUser, action: "announcement.sent", target: `${userIds.length} users`, details: message })
+          .catch((error) => console.warn("Announcement audit record failed:", error.message));
         return response.json({ success: true, count: userIds.length });
       } catch (err) {
         console.error("Failed to send announcement:", err);
@@ -145,11 +156,13 @@ export function createNotificationController() {
 
     sendRoomInvite: async (request, response) => {
       try {
-        const { targetUserId, roomId, inviterName, inviterId } = request.body;
-        if (!targetUserId || !roomId || !inviterName) {
+        const { targetUserId, roomId } = request.body;
+        const inviterId = request.firebaseUser?.uid;
+        const inviterName = String(request.firebaseUser?.name || request.firebaseUser?.email?.split("@")[0] || "A friend").trim().slice(0, 80);
+        if (!targetUserId || !roomId || !inviterId) {
           return response.status(400).json({ error: "Invalid payload" });
         }
-        
+
         const notifData = {
           userId: targetUserId,
           type: "room_invite",
@@ -168,11 +181,13 @@ export function createNotificationController() {
             ...notifData
           });
           await writeLocalNotifications(allNotifs);
+          emitNotificationRefresh(targetUserId, "room-invite");
           return response.json({ success: true });
         }
 
         const docRef = db.collection("notifications").doc();
         await docRef.set(notifData);
+        emitNotificationRefresh(targetUserId, "room-invite");
         return response.json({ success: true });
       } catch (err) {
         console.error("Failed to send room invite:", err);

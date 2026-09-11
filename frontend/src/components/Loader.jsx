@@ -13,7 +13,9 @@ export default function Loader({ visible }) {
         v.currentTime = 2;
         const p = v.play();
         if (p && p.catch) p.catch(() => {});
-      } catch (e) {}
+      } catch {
+        // Ignore autoplay timing failures.
+      }
     };
 
     const onTimeUpdate = () => {
@@ -28,7 +30,9 @@ export default function Loader({ visible }) {
     return () => {
       v.removeEventListener("loadedmetadata", onLoaded);
       v.removeEventListener("timeupdate", onTimeUpdate);
-      try { v.pause(); } catch (e) {}
+      try { v.pause(); } catch {
+        // Ignore cleanup failures for detached media.
+      }
     };
   }, [visible]);
 

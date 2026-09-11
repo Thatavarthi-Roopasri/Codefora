@@ -1,17 +1,14 @@
-import { NavLink, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
-import { Code, Users, Trophy, Zap, Flame } from "lucide-react";
-import { BrandButton } from "../components/BrandButton";
+import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Code, Trophy, Zap, Flame } from "lucide-react";
+
 import { trackEvent } from "../lib/analytics";
 
-import { logoutUser, signInWithGoogle } from "../lib/firebase";
-import { saveUsername } from "../lib/navigation";
-import { api } from "../api/client";
 import { useAuth } from "../hooks/useAuth";
-import mountainImage from "../assets/home/neon-mountain.svg";
-import campfireImage from "../assets/home/neon-campfire.svg";
-import celebrationImage from "../assets/home/neon-celebration.svg";
-import homevideo from "../../assets/homevideo.mp4";
+import { DeferredBackgroundVideo } from "../components/DeferredBackgroundVideo";
+import "../assets/home/neon-mountain.svg";
+import "../assets/home/neon-campfire.svg";
+import "../assets/home/neon-celebration.svg";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
 import scene1 from "../../assets/scene1.jpeg";
 import scene2 from "../../assets/scene2.jpeg";
@@ -19,84 +16,11 @@ import scene3 from "../../assets/scene3.jpeg";
 
 import { Navbar } from "../components/Navbar";
 
+const loadHomeVideo = () => import("../../assets/homevideo.mp4");
+
 export default function HomePage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authTab, setAuthTab] = useState("login");
-  const [authForm, setAuthForm] = useState({ username: "", password: "", confirmPassword: "" });
-  const [authStatus, setAuthStatus] = useState("");
-  const [authBusy, setAuthBusy] = useState(false);
-
-  async function handleGoogleSignIn() {
-    try {
-      const result = await signInWithGoogle();
-      const account = result?.user;
-      const displayName = account?.displayName || account?.email?.split("@")[0] || "Developer";
-      saveUsername(displayName);
-      if (account?.uid) localStorage.setItem("codefora_user_id", account.uid);
-      setAuthOpen(false);
-      navigate('/');
-    } catch (err) {
-      console.error('Google sign-in failed:', err);
-      setAuthStatus("Google sign-in failed. Please try again.");
-    }
-  }
-
-  async function handleContinueAsGuest() {
-    try {
-      await logoutUser();
-    } catch {
-      // ignore
-    }
-
-    try {
-      localStorage.removeItem('codefora_username');
-      localStorage.removeItem('codefora_user_id');
-    } catch {
-      // ignore
-    }
-
-    navigate('/rooms');
-  }
-
-  function updateAuthField(field, value) {
-    setAuthForm((current) => ({ ...current, [field]: value }));
-    setAuthStatus("");
-  }
-
-  function finishManualAuth(account) {
-    saveUsername(account.displayName || account.username);
-    localStorage.setItem("codefora_user_id", account.userId);
-    setAuthForm({ username: "", password: "", confirmPassword: "" });
-    setAuthStatus("");
-    setAuthOpen(false);
-    navigate('/');
-  }
-
-  async function handleManualAuth(event) {
-    event.preventDefault();
-    if (authBusy) return;
-
-    if (authTab === "signup" && authForm.password !== authForm.confirmPassword) {
-      setAuthStatus("Passwords do not match.");
-      return;
-    }
-
-    setAuthBusy(true);
-    setAuthStatus("");
-
-    try {
-      const account = authTab === "signup"
-        ? await api.signup(authForm)
-        : await api.login(authForm);
-      finishManualAuth(account);
-    } catch (error) {
-      setAuthStatus(error.message || "Authentication failed.");
-    } finally {
-      setAuthBusy(false);
-    }
-  }
 
   useEffect(() => {
     if (!loading && !user) {
@@ -167,11 +91,9 @@ export default function HomePage() {
 
       {/* TOP SECTION WITH VIDEO BACKGROUND */}
       <div style={{ position: 'relative', width: '100%', minHeight: '100vh', overflow: 'hidden' }}>
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
+        <DeferredBackgroundVideo
+          sourceLoader={loadHomeVideo}
+          poster={loopsbg}
           style={{
             position: 'absolute',
             top: '50%',
@@ -185,9 +107,7 @@ export default function HomePage() {
             objectFit: 'cover',
             opacity: 0.8
           }}
-        >
-          <source src={homevideo} type="video/mp4" />
-        </video>
+        />
 
         {/* Gradient overlay to seamlessly blend bottom into the rest of the dark page */}
         <div style={{
