@@ -1,5 +1,6 @@
 import { Globe2, Loader2, Play, Terminal, Keyboard, PanelLeftClose, Monitor } from "lucide-react";
 import { useState } from "react";
+import { withChallengePolicy } from '../../lib/preview';
 
 // Double buffered iframe prevents the white flash when updating srcDoc
 
@@ -270,13 +271,13 @@ export function ConsolePanel({
             </div>
           )
         ) : preview?.showPreview ? (
-          <div className="preview-container" style={{ width: '100%', height: '100%' }}>
+            <div className="preview-container" style={{ width: '100%', height: '100%', overflow: 'auto' }}>
             <iframe
               className="preview-iframe"
               title="Web preview"
-              sandbox="allow-scripts allow-modals allow-popups allow-forms allow-same-origin"
-              srcDoc={preview.previewDoc}
-              style={{ width: '100%', height: '100%', border: 'none' }}
+              sandbox={preview.challengeMode ? '' : 'allow-scripts allow-modals allow-popups allow-forms'}
+              srcDoc={preview.challengeMode ? withChallengePolicy(preview.previewDoc) : preview.previewDoc}
+              style={{ width: preview.challengeMode ? 800 : '100%', height: '100%', border: 'none' }}
             />
           </div>
         ) : (

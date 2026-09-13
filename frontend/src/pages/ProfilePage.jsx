@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Edit3, Code, Users, Flame, Trophy,
+  Edit3, Code, Users, Flame,
   Shield, CheckCircle2, UserPlus,
-  Activity, Star, ExternalLink, X, Save, Folder, Clock, Search, ShieldAlert, Copy
+  Activity, Star, ExternalLink, X, Save, Folder, Clock, Search, ShieldAlert, Copy, Heart
 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
@@ -83,7 +83,8 @@ export function ProfilePage() {
   const [profileData, setProfileData] = useState({});
   const [myFriends, setMyFriends] = useState([]);
   const [friendProfiles, setFriendProfiles] = useState({});
-  const [savedWorks, setSavedWorks] = useState([]);
+  const [savedWorksState, setSavedWorksState] = useState({ ownerId: "", items: [] });
+  const savedWorks = isOwnProfile && savedWorksState.ownerId === targetUserId ? savedWorksState.items : [];
   const [resumingWorkId, setResumingWorkId] = useState(null);
   const [endingWorkId, setEndingWorkId] = useState(null);
   const [isSavedWorksModalOpen, setIsSavedWorksModalOpen] = useState(false);
@@ -106,6 +107,7 @@ export function ProfilePage() {
   const [heatmapTooltip] = useState({ visible: false, text: '', x: 0, y: 0 });
   const heatmapContainerRef = useRef(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const favoriteModes = Array.isArray(profileData.favoriteModes) ? profileData.favoriteModes : [];
 
   // Edit Modal State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -198,6 +200,8 @@ export function ProfilePage() {
     let active = true;
     async function loadProfile() {
       setLoadingProfile(true);
+      setSavedWorksState({ ownerId: isOwnProfile ? targetUserId : "", items: [] });
+      setIsSavedWorksModalOpen(false);
       const profile = await getProfile(targetUserId).catch(() => ({}));
       const works = isOwnProfile ? await api.getWorks(targetUserId).catch(() => []) : [];
       if (!isOwnProfile && user?.uid) {
@@ -216,7 +220,7 @@ export function ProfilePage() {
         ...(profile || {}),
         displayName: resolvedDisplayName || profile?.displayName || ""
       });
-      setSavedWorks(Array.isArray(works) ? works : []);
+      setSavedWorksState({ ownerId: isOwnProfile ? targetUserId : "", items: Array.isArray(works) ? works : [] });
       setDisplayName(resolvedDisplayName || "");
       setBio(profile.bio || "Building consistency one problem at a time.");
       setSelectedEmotion(profile.emotionId || "");
@@ -232,8 +236,11 @@ export function ProfilePage() {
     if (!isOwnProfile || !targetUserId) return undefined;
 
     const refreshSavedWorks = () => {
+      const ownerId = targetUserId;
       api.getWorks(targetUserId)
-        .then((works) => setSavedWorks(Array.isArray(works) ? works : []))
+        .then((works) => setSavedWorksState((current) => current.ownerId === ownerId
+          ? { ownerId, items: Array.isArray(works) ? works : [] }
+          : current))
         .catch(() => {});
     };
     const handleSavedWorksChanged = (event) => {
@@ -311,7 +318,10 @@ export function ProfilePage() {
     try {
       const response = await api.endWork(user.uid, work.id);
       const endedWork = response.work || {};
-      setSavedWorks((items) => items.map((item) => item.id === work.id ? { ...item, ...endedWork } : item));
+      setSavedWorksState((current) => ({
+        ...current,
+        items: current.items.map((item) => item.id === work.id ? { ...item, ...endedWork } : item)
+      }));
       showToast("Project ended. It cannot be resumed or edited.");
     } catch (error) {
       showToast(error.message || "Could not end this project");
@@ -764,27 +774,6 @@ export function ProfilePage() {
 
         {/* GRID ROW 1 */}
         <div className="dashboard-grid-2">
-          <div className="dashboard-card">
-            <div className="card-header">
-              <h3>Achievements</h3>
-              <a href="#" className="view-all">View All</a>
-            </div>
-            <div className="achievements-grid">
-              {(profileData.achievements && profileData.achievements.length > 0) ? (
-                profileData.achievements.map((ach, i) => (
-                  <div key={i} className="achievement-item">
-                    <div className="hexagon"><Trophy className="hexagon-icon text-orange" size={24} /></div>
-                    <span className="achievement-name">{ach.name || "Achievement"}</span>
-                  </div>
-                ))
-              ) : (
-                <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center', padding: '20px 0'}}>
-                  No achievements yet. Play matches to unlock!
-                </div>
-              )}
-            </div>
-          </div>
-
           <div style={{ gridColumn: '1 / -1' }}>
             <ActivityHeatmap
               activities={activities}
@@ -806,6 +795,7 @@ export function ProfilePage() {
               {[
                 { id: "relay", name: "Relay DSA", icon: <Users size={14}/>, color: "#f97316" },
                 { id: "frontend", name: "Frontend Relay", icon: <Code size={14}/>, color: "#3b82f6" },
+                { id: "backend", name: "Backend Relay", icon: <Code size={14}/>, color: "#14b8a6" },
                 { id: "blind", name: "Blind Auction", icon: <Shield size={14}/>, color: "#a855f7" },
                 { id: "standard", name: "Standard DSA", icon: <CheckCircle2 size={14}/>, color: "#22c55e" },
                 { id: "battles", name: "Code Battles", icon: <Flame size={14}/>, color: "#ef4444" },
@@ -834,9 +824,12 @@ export function ProfilePage() {
             <div className="donut-container">
               {(() => {
                 const modes = profileData.stats?.modeStats || {};
-                const totalMatches = Object.values(modes).reduce((sum, m) => sum + (m.matches || 0), 0);
+                const selectedModes = favoriteModes
+                  .map((id) => ({ id, ...(modes[id] || { matches: 0, wins: 0 }) }))
+                  .filter((mode) => mode.id);
+                const totalMatches = selectedModes.reduce((sum, mode) => sum + (Number(mode.matches) || 0), 0);
 
-                if (totalMatches === 0) {
+                if (!selectedModes.length || totalMatches === 0) {
                   return (
                     <>
                       <div className="donut-chart" style={{background: 'conic-gradient(rgba(255,255,255,0.1) 0% 100%)'}}>
@@ -846,17 +839,28 @@ export function ProfilePage() {
                         </div>
                       </div>
                       <div className="donut-legend">
-                        <div className="legend-item" style={{color: 'rgba(255,255,255,0.5)'}}>Play matches to unlock favorite mode stats.</div>
+                          <div className="legend-item" style={{color: 'rgba(255,255,255,0.5)'}}>{favoriteModes.length ? 'Play matches in your favorite modes to see them here.' : 'Choose favorite modes with the heart on a Challenges card.'}</div>
                       </div>
                     </>
                   );
                 }
 
-                // If we have matches, calculate the gradient, but for simplicity, we'll assume an empty state is what the user currently has.
                 return (
-                  <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', width: '100%', textAlign: 'center'}}>
-                    Mode distribution will appear here once you play more matches!
-                  </div>
+                  <>
+                    <div className="donut-chart" style={{background: 'conic-gradient(#ff7a18 0% 100%)'}}>
+                      <div className="donut-hole">
+                        <strong>{totalMatches}</strong>
+                        <span>Matches</span>
+                      </div>
+                    </div>
+                    <div className="favorite-mode-summary">
+                    {selectedModes.map((mode) => (
+                      <div className="legend-item" key={mode.id}>
+                        <Heart size={13} fill="currentColor" /> {mode.id} · {mode.matches} matches
+                      </div>
+                    ))}
+                    </div>
+                  </>
                 );
               })()}
             </div>
@@ -865,8 +869,8 @@ export function ProfilePage() {
 
 
         {/* GRID ROW 4 */}
-        <div className="dashboard-grid-2">
-          <div className="dashboard-card">
+        <div className={`dashboard-grid-2 ${!isOwnProfile ? "single-column" : ""}`}>
+          {isOwnProfile && <div className="dashboard-card">
             <div className="card-header">
               <h3>Saved Work (from playground and room)</h3>
               <a href="#" className="view-all" onClick={(e) => { e.preventDefault(); setIsSavedWorksModalOpen(true); }}>View All</a>
@@ -924,11 +928,11 @@ export function ProfilePage() {
                 ))
               ) : (
                 <div style={{color: 'rgba(255,255,255,0.5)', fontSize: '13px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                  <Folder size={16} /> No public projects yet. Save a playground file as public to feature it here!
+                  <Folder size={16} /> No saved work yet.
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           <div className="dashboard-card">
             <div className="card-header">
@@ -942,7 +946,7 @@ export function ProfilePage() {
                     <div className="activity-icon"><Activity size={16} className="text-orange" /></div>
                     <div className="activity-info">
                       <div className="activity-title">{act.text}</div>
-                      <div className="activity-subtext">{act.subtext}</div>
+                      <div className="activity-subtext">{act.subtext || "Activity recorded"}</div>
                     </div>
                     <div className="activity-meta">
                       <div className="activity-time">{new Date(act.timestamp).toLocaleDateString()}</div>
@@ -960,7 +964,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {isSavedWorksModalOpen && (
+      {isOwnProfile && isSavedWorksModalOpen && (
         <div className="modal-overlay" onClick={() => setIsSavedWorksModalOpen(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '760px', height: '680px', display: 'flex', flexDirection: 'column', padding: 0 }}>
             <div className="modal-header" style={{ padding: '24px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

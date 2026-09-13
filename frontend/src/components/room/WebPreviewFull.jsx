@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
+import { withChallengePolicy } from '../../lib/preview';
 
-export function WebPreviewFull({ previewDoc, onClose }) {
+export function WebPreviewFull({ previewDoc, onClose, challengeMode = false }) {
+  const [width, setWidth] = useState(800);
   const openInNewTab = () => {
-    const blob = new Blob([previewDoc], { type: 'text/html' });
+    const blob = new Blob([challengeMode ? withChallengePolicy(previewDoc) : previewDoc], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
   };
@@ -16,6 +18,7 @@ export function WebPreviewFull({ previewDoc, onClose }) {
           Live Preview
         </h2>
         <div style={{ display: 'flex', gap: '12px' }}>
+          {challengeMode && <select aria-label="Practice preview width" value={width} onChange={event => setWidth(Number(event.target.value))}><option value={800}>Desktop 800px</option><option value={375}>Mobile 375px</option></select>}
           <button 
             className="button secondary compact" 
             onClick={openInNewTab}
@@ -34,12 +37,12 @@ export function WebPreviewFull({ previewDoc, onClose }) {
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, backgroundColor: '#fff', minHeight: 0 }}>
+      <div style={{ flex: 1, backgroundColor: '#fff', minHeight: 0, overflow: 'auto' }}>
         <iframe
           title="Web preview full"
-          sandbox="allow-scripts allow-modals allow-popups allow-forms allow-same-origin"
-          srcDoc={previewDoc}
-          style={{ width: '100%', height: '100%', border: 'none' }}
+          sandbox={challengeMode ? '' : 'allow-scripts allow-modals allow-popups allow-forms'}
+          srcDoc={challengeMode ? withChallengePolicy(previewDoc) : previewDoc}
+          style={{ width: challengeMode ? width : '100%', height: '100%', border: 'none' }}
         />
       </div>
     </div>

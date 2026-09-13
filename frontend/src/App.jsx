@@ -1,5 +1,6 @@
 import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
 import { lazy, Suspense, useEffect, useState } from "react";
+import "./challenge-improvements.css";
 import { useTheme } from "./hooks/useTheme";
 import Loader from "./components/Loader";
 import { Footer } from "./components/Footer";

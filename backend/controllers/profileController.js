@@ -67,9 +67,36 @@ function createDefaultProfile(identity = {}) {
     community: "sider",
     friends: [],
     activities: [],
-    stats: {},
+    stats: { modeStats: createEmptyModeStats() },
     photoURL: identity.photoURL || ""
   };
+}
+
+const COMPETITIVE_MODES = ["relay", "frontend", "backend", "blind", "standard", "battles"];
+const COMPETITIVE_MODE_LABELS = {
+  relay: "Relay DSA",
+  frontend: "Frontend Relay",
+  backend: "Backend Relay",
+  blind: "Blind Auction",
+  standard: "Standard DSA",
+  battles: "Code Battles"
+};
+
+function createEmptyModeStats() {
+  return Object.fromEntries(COMPETITIVE_MODES.map((mode) => [mode, { matches: 0, wins: 0 }]));
+}
+
+function normalizeCompetitiveStats(profile = {}) {
+  const stats = profile.stats || {};
+  const modeStats = { ...createEmptyModeStats(), ...(stats.modeStats || {}) };
+  for (const mode of COMPETITIVE_MODES) {
+    const current = modeStats[mode] || {};
+    modeStats[mode] = {
+      matches: Number(current.matches) || 0,
+      wins: Number(current.wins) || 0
+    };
+  }
+  return { ...profile, stats: { ...stats, modeStats } };
 }
 
 export function getWorkMetrics(work = {}) {
@@ -195,6 +222,26 @@ export function applyWorkSaveToProfile(profile = {}, work = {}, previousWork = n
       },
       ...updatedActivities
     ].slice(0, 1000)
+  };
+}
+
+export function profileForViewer(profile = {}, isOwner = false) {
+  if (isOwner) return profile;
+  const publicProfile = normalizeCompetitiveStats(profile);
+  delete publicProfile.savedWorks;
+  delete publicProfile.recentWorks;
+  delete publicProfile.works;
+  delete publicProfile.projects;
+  const stats = { ...(publicProfile.stats || {}) };
+  delete stats.savedWorks;
+  delete stats.workContributions;
+  delete stats.lastWorkSavedAt;
+  delete stats.competitiveMatchIds;
+  return {
+    ...publicProfile,
+    stats,
+    activities: (Array.isArray(publicProfile.activities) ? publicProfile.activities : [])
+      .filter((activity) => !activity?.workId && !['work_save', 'work_end'].includes(activity?.type))
   };
 }
 
@@ -598,7 +645,7 @@ export function createProfileController() {
             if (globalOnlineUsers.has(trueUserId) && globalOnlineUsers.get(trueUserId).size > 0) {
               presence = userIdToRoomId.has(trueUserId) ? "in-room" : "online";
             }
-            return response.json({ ...(targetUser.profile || {}), presence, id: trueUserId });
+            return response.json({ ...profileForViewer(normalizeCompetitiveStats(targetUser.profile || {}), isOwnSignedInProfile), presence, id: trueUserId });
           } else {
             if (isNumericCode) return response.json({}); // Not found by code
             
@@ -659,7 +706,7 @@ export function createProfileController() {
             presence = userIdToRoomId.has(trueUserId) ? "in-room" : "online";
           }
           
-          return response.json({ ...(data.profile || {}), presence, id: trueUserId });
+          return response.json({ ...profileForViewer(normalizeCompetitiveStats(data.profile || {}), isOwnSignedInProfile), presence, id: trueUserId });
         } else {
           if (isNumericCode) return response.json({}); // Not found by code
 
@@ -685,6 +732,14 @@ export function createProfileController() {
       // SECURITY FIX: Prevent malicious users from promoting themselves to admin via the API
       if (profile.role !== undefined) {
         delete profile.role;
+      }
+      // Competitive results are server-owned. Only the selected favorite mode
+      // list may be changed from the profile UI.
+      delete profile.stats;
+      if (profile.favoriteModes !== undefined) {
+        profile.favoriteModes = Array.isArray(profile.favoriteModes)
+          ? [...new Set(profile.favoriteModes.map((mode) => String(mode).trim().toLowerCase()).filter((mode) => COMPETITIVE_MODES.includes(mode) || mode === "random"))].slice(0, 10)
+          : [];
       }
       
       if (!userId) return response.status(400).json({ error: "Missing userId" });
@@ -876,6 +931,83 @@ export function createProfileController() {
       }
     },
 
+    recordCompetitiveResult: async (userId, { mode, matchId, won = false } = {}) => {
+      const normalizedMode = String(mode || "").trim().toLowerCase();
+      const normalizedMatchId = String(matchId || "").trim();
+      if (!userId || !normalizedMode || !normalizedMatchId) return false;
+
+      try {
+        if (!db || db.isMock) {
+          const users = await readLocalUsers();
+          if (!users[userId]) users[userId] = { profile: {} };
+          if (!users[userId].profile) users[userId].profile = {};
+          const profile = users[userId].profile;
+          const stats = profile.stats || {};
+          const recorded = stats.competitiveMatchIds || {};
+          if (recorded[normalizedMatchId]) return false;
+          const modeStats = stats.modeStats || {};
+          const current = modeStats[normalizedMode] || { matches: 0, wins: 0 };
+          modeStats[normalizedMode] = {
+            matches: (Number(current.matches) || 0) + 1,
+            wins: (Number(current.wins) || 0) + (won ? 1 : 0)
+          };
+          recorded[normalizedMatchId] = true;
+          const timestamp = Date.now();
+          profile.stats = { ...stats, modeStats, competitiveMatchIds: recorded };
+          profile.activities = [
+            {
+              type: "competitive_result",
+              matchId: normalizedMatchId,
+              text: `${won ? "Won" : "Completed"} ${COMPETITIVE_MODE_LABELS[normalizedMode] || normalizedMode}`,
+              subtext: `${modeStats[normalizedMode].wins} wins · ${modeStats[normalizedMode].matches} matches`,
+              timestamp
+            },
+            ...(Array.isArray(profile.activities) ? profile.activities : [])
+          ].slice(0, 1000);
+          users[userId].updatedAt = timestamp;
+          await writeLocalUsers(users);
+          return true;
+        }
+
+        const docRef = db.collection("users").doc(userId);
+        const doc = await docRef.get();
+        const data = doc.exists ? doc.data() : { profile: {} };
+        const profile = data.profile || {};
+        const stats = profile.stats || {};
+        const recorded = stats.competitiveMatchIds || {};
+        if (recorded[normalizedMatchId]) return false;
+        const modeStats = stats.modeStats || {};
+        const current = modeStats[normalizedMode] || { matches: 0, wins: 0 };
+        modeStats[normalizedMode] = {
+          matches: (Number(current.matches) || 0) + 1,
+          wins: (Number(current.wins) || 0) + (won ? 1 : 0)
+        };
+        recorded[normalizedMatchId] = true;
+        const timestamp = Date.now();
+        await docRef.set({
+          profile: {
+            ...profile,
+            stats: { ...stats, modeStats, competitiveMatchIds: recorded },
+            activities: [
+              {
+                type: "competitive_result",
+                matchId: normalizedMatchId,
+                text: `${won ? "Won" : "Completed"} ${COMPETITIVE_MODE_LABELS[normalizedMode] || normalizedMode}`,
+                subtext: `${modeStats[normalizedMode].wins} wins · ${modeStats[normalizedMode].matches} matches`,
+                timestamp
+              },
+              ...(Array.isArray(profile.activities) ? profile.activities : [])
+            ].slice(0, 1000)
+          },
+          updatedAt: timestamp
+        }, { merge: true });
+        return true;
+      } catch (error) {
+        console.warn(`Competitive stat record failed for ${userId}: ${error.message}`);
+        return false;
+      }
+    },
+
     addActivity: async (userId, activity) => {
       if (!userId) return;
       try {
@@ -939,6 +1071,14 @@ export function createProfileController() {
             
             users[userId].updatedAt = Date.now();
             await writeLocalUsers(users);
+            const modeStats = profile.stats.modeStats || {};
+            const currentMode = modeStats.standard || { matches: 0, wins: 0 };
+            modeStats.standard = {
+              matches: (Number(currentMode.matches) || 0) + 1,
+              wins: (Number(currentMode.wins) || 0) + 1
+            };
+            profile.stats.modeStats = modeStats;
+            await writeLocalUsers(users);
           }
           return response.json({ ok: true, solvedProblems: solved });
         }
@@ -957,6 +1097,14 @@ export function createProfileController() {
             profile: { ...data.profile, solvedProblems: solved, stats },
             updatedAt: Date.now() 
           }, { merge: true });
+
+          const modeStats = stats.modeStats || {};
+          const currentMode = modeStats.standard || { matches: 0, wins: 0 };
+          modeStats.standard = {
+            matches: (Number(currentMode.matches) || 0) + 1,
+            wins: (Number(currentMode.wins) || 0) + 1
+          };
+          await docRef.set({ profile: { ...data.profile, stats: { ...stats, modeStats } } }, { merge: true });
           
           // Add Activity
           const activities = data.profile?.activities || [];

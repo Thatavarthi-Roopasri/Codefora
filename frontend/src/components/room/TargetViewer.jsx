@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Maximize2, Minimize2, Target } from 'lucide-react';
 
-export function TargetViewer({ targetImage, difficulty }) {
+export function TargetViewer({ targetImage, mobileImage, difficulty }) {
+  const [viewport, setViewport] = useState('desktop');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const difficultyLabel = String(difficulty || 'easy')
     .trim()
@@ -55,6 +56,7 @@ export function TargetViewer({ targetImage, difficulty }) {
       <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '600' }}>
           <Target size={18} /> Target Design {difficultyLabel}
+          <select aria-label="Target viewport" value={viewport} onChange={event => setViewport(event.target.value)} style={{ background: '#14263b', color: 'white', maxWidth: 120 }}><option value="desktop">800px</option><option value="mobile" disabled={!mobileImage}>375px</option></select>
         </div>
         <button
           type="button"
@@ -88,11 +90,11 @@ export function TargetViewer({ targetImage, difficulty }) {
           {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
         </button>
       </div>
-      <div style={{ flex: 1, padding: isFullscreen ? '24px' : '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'auto' }}>
+      <div style={{ flex: 1, padding: isFullscreen ? '24px' : '16px', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflow: 'auto' }}>
         <img 
-          src={targetImage} 
+          src={viewport === 'mobile' && mobileImage ? mobileImage : targetImage}
           alt="UI Target" 
-          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }} 
+          style={{ width: '100%', maxWidth: viewport === 'mobile' ? '375px' : '800px', height: 'auto', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
         />
       </div>
     </div>
