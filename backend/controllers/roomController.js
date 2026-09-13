@@ -1,3 +1,5 @@
+import { activateWarBattle, assignWarProblem, finishWarBattle } from '../services/warBattleService.js';
+
 export function createRoomController(roomRepository, roomService, profileController, onRoomCreated) {
   const windowMs = 10 * 60 * 1000;
   const maxRequests = 5;
@@ -30,15 +32,20 @@ export function createRoomController(roomRepository, roomService, profileControl
   return {
     rateLimit,
     list: (request, response) => {
-      const all = roomRepository.listAll();
+      const all = roomRepository.listAll().filter(room => room.warArena?.status !== 'CANCELLED' && String(room.relay?.status || '').toUpperCase() !== 'ENDED' && !room.relay?.endedAt);
       response.json(all.map((room) => roomService.publicRoom(room, request.firebaseUser?.uid || null)));
     },
     create: async (request, response) => {
       try {
+        if ((request.body?.warArena || request.body?.relayMode) && !request.firebaseUser?.uid) return response.status(401).json({ error: 'Sign in to create a battle or relay.' });
         const room = roomService.createRoom({
           ...(request.body || {}),
           userId: request.firebaseUser?.uid || request.body?.userId || null,
         });
+        if (room.warArena) {
+          Object.assign(room.warArena, { status: 'WAITING', teams: { LOOP: [], SIDER: [] }, participants: [], startsAt: null, endsAt: null, completedAt: null, winningTeam: null, resultReason: null, teamCode: { LOOP: '', SIDER: '' }, teamMessages: { LOOP: [], SIDER: [] }, activity: [] });
+          await assignWarProblem(room.warArena);
+        }
         await roomRepository.save(room);
         
         if (room.ownerUserId && profileController?.incrementStat) {
@@ -52,7 +59,7 @@ export function createRoomController(roomRepository, roomService, profileControl
         response.status(400).json({ error: error.message });
       }
     },
-    get: (request, response) => {
+    get: async (request, response) => {
       const room = roomRepository.findById(request.params.id);
       if (!room) return response.status(404).json({ error: "Room not found" });
 
@@ -65,11 +72,25 @@ export function createRoomController(roomRepository, roomService, profileControl
         }
       }
 
+      const battleActivated = activateWarBattle(room.warArena);
+      if (finishWarBattle(room.warArena) || battleActivated) {
+        if (profileController?.recordCompetitiveResult && room.warArena.status === "COMPLETED" && !room.warArena.statsRecordedAt) {
+          room.warArena.statsRecordedAt = Date.now();
+          const mode = room.warArena.battleType === "mcqs" ? "blind" : "battles";
+          await Promise.all((room.warArena.participants || []).map((participant) => profileController.recordCompetitiveResult(participant.userId, {
+            mode,
+            matchId: `battle:${room.id}`,
+            won: Boolean(room.warArena.winningTeam && participant.team === room.warArena.winningTeam)
+          })));
+        }
+        await roomRepository.save(room);
+      }
       response.json(roomService.snapshot(room));
     },
     findByInviteCode: (request, response) => {
       const room = roomRepository.findByInviteCode(request.params.code);
       if (!room) return response.status(404).json({ error: "Room not found" });
+      if (room.relay?.status === 'ENDED') return response.status(410).json({ error: "This Relay has ended" });
       response.json(roomService.snapshot(room));
     }
   };

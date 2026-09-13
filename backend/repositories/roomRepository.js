@@ -24,7 +24,11 @@ export class RoomRepository {
     const now = Date.now();
     const zombieRooms = [];
     for (const [id, room] of this.rooms.entries()) {
-      if (!room.project && room.users && room.users.length === 0) {
+      if (room.relay?.status === 'ENDED' && now - (room.relay.endedAt || room.updatedAt || now) > 24 * 60 * 60 * 1000) {
+        zombieRooms.push(id);
+        continue;
+      }
+      if (!room.project && !room.relay && !room.warArena && room.users && room.users.length === 0) {
         if (now - (room.lastActivityAt || room.updatedAt || room.createdAt || now) > 5 * 60 * 1000) {
           zombieRooms.push(id);
         }
@@ -41,7 +45,7 @@ export class RoomRepository {
     if (!this.firestore || this.firestore.isMock) {
       const localRooms = await this.readLocalRooms();
       if (localRooms.length) {
-        this.rooms = new Map(localRooms.map((room) => [room.id, { ...room, users: [] }]));
+        this.rooms = new Map(localRooms.map((room) => [room.id, restoreRoomState(room)]));
       }
       return;
     }
@@ -57,7 +61,7 @@ export class RoomRepository {
             this.firestore.collection("rooms").doc(doc.id).set({ inviteCode: data.inviteCode }, { merge: true }),
           );
         }
-        return [doc.id, { id: doc.id, ...data, users: [] }];
+        return [doc.id, restoreRoomState({ id: doc.id, ...data })];
       }));
       if (inviteCodeUpdates.length) {
         await Promise.all(inviteCodeUpdates);
@@ -66,7 +70,7 @@ export class RoomRepository {
   }
 
   listPublic() {
-    return [...this.rooms.values()].filter((room) => room.visibility === "public" && room.project?.status !== "completed");
+    return [...this.rooms.values()].filter((room) => room.visibility === "public" && room.project?.status !== "completed" && room.warArena?.status !== 'CANCELLED' && String(room.relay?.status || '').toUpperCase() !== 'ENDED' && !room.relay?.endedAt);
   }
 
   listAll() {
@@ -99,7 +103,7 @@ export class RoomRepository {
     const doc = await this.firestore.collection("rooms").doc(String(id || "").trim()).get();
     if (doc.exists) {
       const data = doc.data();
-      const room = { id: doc.id, ...data, users: [] };
+      const room = restoreRoomState({ id: doc.id, ...data });
       this.rooms.set(room.id, room);
       return room;
     }
@@ -116,7 +120,7 @@ export class RoomRepository {
     if (!snapshot.empty) {
       const doc = snapshot.docs[0];
       const data = doc.data();
-      const room = { id: doc.id, ...data, users: [] };
+      const room = restoreRoomState({ id: doc.id, ...data });
       this.rooms.set(room.id, room);
       return room;
     }
@@ -171,4 +175,12 @@ export class RoomRepository {
 
 function normalizeInvite(inviteCode) {
   return String(inviteCode || "").replace(/\s+/g, "").trim().toUpperCase();
+}
+
+function restoreRoomState(room) {
+  if (room.warArena) {
+    room.warArena.pendingSubmissions = 0;
+    if (room.warArena.status === "COUNTDOWN" && room.warArena.startsAt <= Date.now()) room.warArena.status = "ACTIVE";
+  }
+  return { ...room, users: [] };
 }
