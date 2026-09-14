@@ -1,12 +1,21 @@
 import React from 'react';
-import { X, Trophy, AlertCircle } from 'lucide-react';
+import { X, Trophy, AlertCircle, Maximize2 } from 'lucide-react';
 import { BrandButton } from '../BrandButton';
 
 export function ScoreModal({ isOpen, onClose, score, feedback, userImage, targetImage }) {
   if (!isOpen) return null;
 
-  const isGood = score >= 80;
-  const color = isGood ? '#22c55e' : (score >= 50 ? '#eab308' : '#ef4444');
+  const isGood = score >= 75;
+  const color = isGood ? '#22c55e' : (score >= 55 ? '#eab308' : '#ef4444');
+  const title = score >= 90 ? 'Pixel Perfect!' : score >= 75 ? 'Great Match!' : score >= 55 ? 'Getting Close' : 'Needs Work';
+  const previewFrameStyle = {
+    border: '1px solid rgba(255,255,255,0.12)',
+    background: 'rgba(2,6,23,0.72)',
+    overscrollBehavior: 'contain'
+  };
+  const previewImageStyle = {
+    display: 'block'
+  };
 
   return (
     <div style={{
@@ -20,7 +29,7 @@ export function ScoreModal({ isOpen, onClose, score, feedback, userImage, target
         background: 'rgba(15, 23, 42, 0.95)',
         border: `1px solid ${color}`,
         borderRadius: '24px',
-        width: 'min(94vw, 1120px)',
+        width: 'min(96vw, 1280px)',
         maxHeight: 'calc(100vh - 36px)',
         padding: '22px',
         textAlign: 'center',
@@ -30,7 +39,7 @@ export function ScoreModal({ isOpen, onClose, score, feedback, userImage, target
       }}>
         <button 
           onClick={onClose}
-          style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
+          style={{ position: 'sticky', top: '0', marginLeft: 'auto', marginBottom: '-28px', zIndex: 2, display: 'flex', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
         >
           <X size={24} />
         </button>
@@ -45,7 +54,7 @@ export function ScoreModal({ isOpen, onClose, score, feedback, userImage, target
         </div>
 
         <h2 style={{ fontSize: '1.35rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-          {isGood ? <><Trophy color={color} /> Awesome Job!</> : <><AlertCircle color={color} /> Needs Work</>}
+          {isGood ? <><Trophy color={color} /> {title}</> : <><AlertCircle color={color} /> {title}</>}
         </h2>
 
         <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '1rem', marginBottom: '18px', fontStyle: 'italic' }}>
@@ -53,17 +62,31 @@ export function ScoreModal({ isOpen, onClose, score, feedback, userImage, target
         </p>
 
         {(userImage || targetImage) && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '18px', marginBottom: '18px', alignItems: 'start' }}>
+          <div className="score-comparison-grid" style={{ marginBottom: '18px' }}>
             {targetImage && (
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>Target Design</p>
-                <img src={targetImage} alt="Target Design" style={{ width: '100%', maxHeight: '38vh', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(2,6,23,0.72)' }} />
+                <div className="score-preview-heading">
+                  <p>Target Design</p>
+                  <a href={targetImage} target="_blank" rel="noreferrer" aria-label="Open target design full size">
+                    <Maximize2 size={14} />
+                  </a>
+                </div>
+                <div className="score-preview-frame" style={previewFrameStyle}>
+                  <img src={targetImage} alt="Target Design" style={previewImageStyle} />
+                </div>
               </div>
             )}
             {userImage && (
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>Your Submission</p>
-                <img src={userImage} alt="User Render" style={{ width: '100%', maxHeight: '38vh', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(2,6,23,0.72)' }} />
+                <div className="score-preview-heading">
+                  <p>Your Submission</p>
+                  <a href={userImage} target="_blank" rel="noreferrer" aria-label="Open your submission full size">
+                    <Maximize2 size={14} />
+                  </a>
+                </div>
+                <div className="score-preview-frame" style={previewFrameStyle}>
+                  <img src={userImage} alt="User Render" style={previewImageStyle} />
+                </div>
               </div>
             )}
           </div>

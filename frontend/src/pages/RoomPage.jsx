@@ -26,7 +26,9 @@ import { isGuestUser } from "../lib/userAccess";
 import { api } from "../api/client";
 import loopsbg from "../../assets/loopsbgimage.jpeg";
 import { TargetViewer } from "../components/room/TargetViewer";
-import { ScoreModal } from "../components/room/ScoreModal";
+import { ChallengeResults as ScoreModal } from "../components/room/ChallengeResults";
+import { useChallengePractice } from '../hooks/useChallengePractice';
+import { buildPreview } from '../lib/preview';
 import { LoginRequiredModal } from "../components/LoginRequiredModal";
 
 export function RoomPage() {
@@ -111,6 +113,7 @@ export function RoomPage() {
   const [isScoring, setIsScoring] = useState(false);
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
   const [scoreData, setScoreData] = useState(null);
+  const practice = useChallengePractice({ challengeId, room, files, user, snapshot: actions.snapshotFilesWithLiveEditor });
 
   useEffect(() => {
     setProjectState(room?.project || null);
@@ -217,6 +220,7 @@ export function RoomPage() {
     setIsGeneratingChallenge(true);
     setProjectNotice("");
     try {
+      await practice.saveNow();
       const targetPayload = await api.request("/api/challenge/generate", {
         method: "POST",
         body: JSON.stringify({ difficulty })
@@ -242,24 +246,18 @@ export function RoomPage() {
     try {
       const currentFiles = actions.snapshotFilesWithLiveEditor?.() || files;
       const htmlFile = currentFiles.find(f => f.name.endsWith('.html'));
-      const cssFile = currentFiles.find(f => f.name.endsWith('.css'));
-      let userCode = htmlFile?.code || '';
-      if (!userCode.trim()) {
+      if (!htmlFile?.code?.trim()) {
         throw new Error("Add some HTML before submitting the challenge.");
       }
-      if (cssFile?.code) {
-        if (userCode.includes('</head>')) {
-          userCode = userCode.replace('</head>', `<style>${cssFile.code}</style></head>`);
-        } else {
-          userCode += `<style>${cssFile.code}</style>`;
-        }
-      }
+      const userCode = buildPreview(currentFiles, preview.previewTarget);
+      await practice.saveNow();
 
       const data = await api.request("/api/challenge/submit", {
         method: 'POST',
-        body: JSON.stringify({ userCode, challengeId })
+        body: JSON.stringify({ userCode, challengeId, files: currentFiles, entryFile: preview.previewTarget })
       });
       setScoreData(data);
+      practice.record(data);
     } catch (err) {
       console.error(err);
       setProjectNotice(err.message || "Could not score this challenge. Please try again.");
@@ -393,7 +391,8 @@ export function RoomPage() {
     }
   };
 
-  const handleLeaveRequest = () => {
+  const handleLeaveRequest = async () => {
+    if (isChallenge) { try { await practice.saveNow(); } catch (error) { setProjectNotice(error.message); return; } }
     if (hasUnsavedResumedProjectChanges()) {
       setShowUnsavedProjectPrompt(true);
     } else {
@@ -835,7 +834,7 @@ export function RoomPage() {
                 {activeProblem || isChallenge ? (
                   <>
                     {isChallenge ? (
-                      <TargetViewer targetImage={targetImage} difficulty={difficulty} />
+                      <><div className="challenge-practice-status" role="status">{practice.status || 'Practice target has no expiry.'} · HTML/CSS · scored at 800px and 375px. <button onClick={() => practice.saveNow().catch(() => {})}>Save draft</button></div><TargetViewer targetImage={targetImage} mobileImage={practice.mobileImage} difficulty={difficulty} /></>
                     ) : (
                       <ProblemPanel problem={activeProblem} />
                     )}
@@ -1201,6 +1200,7 @@ export function RoomPage() {
                 <div className="right-panel" style={{ width: isSplitView ? `${rightPanelWidth}px` : '100%', flex: isSplitView ? '0 0 auto' : 1, display: 'flex', flexDirection: 'column', minHeight: 0, borderLeft: isSplitView ? "1px solid var(--glass-border)" : "none", background: "rgba(15, 23, 42, 0.3)", backdropFilter: "blur(8px)" }}>
                   {activeMainTab === 'preview' ? (
                     <WebPreviewFull 
+                      challengeMode={Boolean(isChallenge)}
                       previewDoc={preview.previewDoc} 
                       onClose={() => setActiveMainTab('editor')} 
                     />
@@ -1365,6 +1365,8 @@ export function RoomPage() {
             feedback={scoreData.feedback}
             userImage={scoreData.userImage}
             targetImage={targetImage}
+            reports={scoreData.reports}
+            history={practice.history}
           />
         )}
       </div>

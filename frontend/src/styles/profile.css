@@ -302,6 +302,10 @@
   gap: 24px;
 }
 
+.dashboard-grid-2.single-column {
+  grid-template-columns: 1fr;
+}
+
 .dashboard-grid-3 {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -503,6 +507,20 @@
 
 .progress-wins {
   color: rgba(255,255,255,0.6);
+}
+
+.favorite-mode-summary {
+  display: grid;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.favorite-mode-summary .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
 }
 
 .progress-track {

@@ -50,7 +50,8 @@ export function RoomsPage() {
   const location = useLocation();
   const { user, loading } = useAuth();
   const [rooms, setRooms] = useState([]);
-  const [savedWorks, setSavedWorks] = useState([]);
+  const [savedWorksState, setSavedWorksState] = useState({ ownerId: "", items: [] });
+  const savedWorks = savedWorksState.ownerId === user?.uid ? savedWorksState.items : [];
   const [joinRoomTarget, setJoinRoomTarget] = useState(null);
   const [codeEntry, setCodeEntry] = useState("");
   const [joinError, setJoinError] = useState("");
@@ -81,12 +82,16 @@ export function RoomsPage() {
 
   const refreshSavedWorks = useCallback(() => {
     if (!user?.uid) {
-      setSavedWorks([]);
+      setSavedWorksState({ ownerId: "", items: [] });
       return Promise.resolve();
     }
-    return api.getWorks(user.uid)
-      .then((works) => setSavedWorks(Array.isArray(works) ? works : []))
-      .catch(() => setSavedWorks([]));
+    const ownerId = user.uid;
+    setSavedWorksState((current) => current.ownerId === ownerId ? current : { ownerId, items: [] });
+    return api.getWorks(ownerId)
+      .then((works) => setSavedWorksState((current) => current.ownerId === ownerId
+        ? { ownerId, items: Array.isArray(works) ? works : [] }
+        : current))
+      .catch(() => setSavedWorksState((current) => current.ownerId === ownerId ? { ownerId, items: [] } : current));
   }, [user?.uid]);
 
   useEffect(() => {
@@ -126,6 +131,8 @@ export function RoomsPage() {
   const filteredRooms = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const nextRooms = rooms.filter((room) => {
+      // Ended Relay rooms are historical records and must never be shown as joinable rooms.
+      if (String(room.relay?.status || '').toUpperCase() === 'ENDED' || room.relay?.endedAt) return false;
       const roomNameText = String(room.name || "").toLowerCase();
       const roomIdText = String(room.id || "").toLowerCase();
       const hostText = String(room.hostName || room.host || "").toLowerCase();
@@ -291,7 +298,10 @@ export function RoomsPage() {
     try {
       const result = await api.deleteWork(user.uid, target.id);
       const deletedIds = new Set(result.deletedWorkIds || [target.id]);
-      setSavedWorks((items) => items.filter((work) => !deletedIds.has(work.id)));
+      setSavedWorksState((current) => ({
+        ...current,
+        items: current.items.filter((work) => !deletedIds.has(work.id))
+      }));
       setDeleteProjectTarget(null);
       setOpenProjectMenuId(null);
       showToast("Project deleted permanently.");

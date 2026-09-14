@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { Footer } from "../components/Footer";
 import {
-  ArrowDownUp,
+  Bug,
   CheckCircle2,
   CircleX,
   Database,
   Filter,
   GitBranch,
+  Heart,
   Info,
   List,
   LayoutGrid,
@@ -18,11 +19,14 @@ import {
   Route,
   ShieldCheck,
   Sparkles,
+  Sword,
+  Trophy,
   Users
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { api } from "../api/client";
+import { api, getProfile, saveProfile } from "../api/client";
 import { saveHostToken, saveInviteCode, saveUsername } from "../lib/navigation";
+import { isGuestUser } from "../lib/userAccess";
 
 function capitalize(value) {
   return String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
@@ -31,35 +35,73 @@ function capitalize(value) {
 export function ChallengesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [favoriteModes, setFavoriteModes] = useState([]);
   const [difficulty, setDifficulty] = useState("easy");
   const [relayMode, setRelayMode] = useState("frontend");
-  const [relayTeamSize] = useState(4);
+  const [relayTeamSize, setRelayTeamSize] = useState(4);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStartingRelay, setIsStartingRelay] = useState(false);
-  const [isStartingBackendRelay, setIsStartingBackendRelay] = useState(false);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("newest");
   const [viewMode, setViewMode] = useState("grid");
   const [activeInfoPanel, setActiveInfoPanel] = useState(null);
+  useEffect(() => {
+    if (!user?.uid || isGuestUser(user)) {
+      setFavoriteModes([]);
+      return undefined;
+    }
+    let active = true;
+    getProfile(user.uid).then((profile) => {
+      if (active) setFavoriteModes(Array.isArray(profile?.favoriteModes) ? profile.favoriteModes : []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [user?.uid]);
+
+  const toggleFavoriteMode = async (modeId) => {
+    if (!user?.uid || isGuestUser(user)) return;
+    const next = favoriteModes.includes(modeId)
+      ? favoriteModes.filter((id) => id !== modeId)
+      : [...favoriteModes, modeId];
+    setFavoriteModes(next);
+    try {
+      await saveProfile(user.uid, { favoriteModes: next });
+    } catch {
+      setFavoriteModes(favoriteModes);
+    }
+  };
+
+  const FavoriteButton = ({ modeId }) => {
+    const active = favoriteModes.includes(modeId);
+    return (
+      <button
+        type="button"
+        className={`challenge-favorite-toggle ${active ? "active" : ""}`}
+        onClick={() => toggleFavoriteMode(modeId)}
+        aria-label={active ? "Remove from favorite modes" : "Add to favorite modes"}
+        aria-pressed={active}
+        title={active ? "Remove from favorites" : "Add to favorites"}
+      >
+        <Heart size={18} fill={active ? "currentColor" : "none"} />
+      </button>
+    );
+  };
   const relayContent = relayMode === "frontend"
     ? {
       title: "Frontend Relay",
-      description: "Divide a UI into sections, build in parallel, help teammates, and polish one responsive product.",
+      description: "Choose a private section in 15 seconds and build a combined page with shared leftovers.",
       features: [
         [PanelsTopLeft, "UI breakdown"],
         [Users, "Section ownership"],
-        [GitBranch, "Help and relay"],
+        [GitBranch, "15-second selection"],
         [CheckCircle2, "Responsive polish"]
       ]
-    }
-    : {
-      title: "Backend Relay",
-      description: "Own a service, connect APIs, debug together, and ship one reliable backend system.",
+    } : {
+      title: "DSA Relay",
+      description: "Choose a private JavaScript function and solve the team data-summary challenge.",
       features: [
-        [Route, "API contracts"],
-        [Database, "Database layer"],
-        [ShieldCheck, "Auth + security"],
+        [Route, "Function contracts"],
+        [Database, "Shared leftovers"],
+        [ShieldCheck, "Private source"],
         [CheckCircle2, "Tests + reliability"]
       ]
     };
@@ -68,20 +110,13 @@ export function ChallengesPage() {
     ["available", "Always available"],
     ["team", "Team mode"]
   ];
-  const sortOptions = [
-    ["newest", "Newest"],
-    ["type", "Challenge type"],
-    ["team", "Team first"]
-  ];
-  const challengeOrder = sortBy === "team" ? ["relay", "random"] : ["random", "relay"];
+  const challengeOrder = ["random", "relay", "codewars"];
   const visibleChallengeIds = challengeOrder.filter((id) => {
     if (statusFilter === "all") return true;
     if (statusFilter === "available") return id === "random";
-    if (statusFilter === "team") return id === "relay";
+    if (statusFilter === "team") return id === "relay" || id === "codewars";
     return true;
   });
-
-
   const infoContent = activeInfoPanel === "random"
     ? {
       title: "Random Frontend Challenge",
@@ -89,18 +124,27 @@ export function ChallengesPage() {
     }
     : activeInfoPanel === "relay"
       ? {
-        title: relayMode === "frontend" ? "Frontend Relay" : "Backend Relay",
+         title: relayMode === "frontend" ? "Frontend Relay" : "DSA Relay",
         text: relayMode === "frontend"
-          ? "This is for team frontend practice. Codefora creates a private room where teammates divide sections, build together, help each other, and finish by polishing responsiveness and visual consistency."
-          : "This is for team backend practice. Codefora creates a private room where teammates divide services, connect APIs, review each other's work, debug together, and finish with testing, security, and reliability checks."
+          ? "Everyone joins and marks ready. The host starts a 15-second task selection. Each person chooses one private section; unclaimed sections become shared. Preview the combined page without exposing teammates' source."
+           : "Choose a JavaScript function during the first 15 seconds. You can edit your function and shared leftovers only. Teammates' source stays hidden. Run the team checks, mark every task done, then the host submits."
+      }
+      : activeInfoPanel === "codewars"
+      ? {
+        title: "Codewars",
+        text: "Create a competitive war room, choose the battle type, team size, language, difficulty, time limit, and visibility, then enter the arena. Supported modes use server-verified correctness and earliest best submission as the tie-break. Build modes use team review."
       }
       : null;
 
+  const requireAccount = () => {
+    if (!isGuestUser(user)) return true;
+    const returnTo = '/challenges';
+    navigate(`/?returnTo=${encodeURIComponent(returnTo)}`, { state: { returnTo } });
+    return false;
+  };
+
   const startChallenge = async () => {
-    if (!user) {
-      navigate("/");
-      return;
-    }
+    if (!requireAccount()) return;
 
     const displayName = user.displayName || user.username || user.email?.split("@")[0] || "Developer";
     const userId = user.uid || user.id || null;
@@ -134,7 +178,8 @@ export function ChallengesPage() {
         challengeDifficulty
       };
 
-      const room = await api.createRoom(roomPayload);
+      const draft = await api.request('/api/challenge/work/' + challengeId);
+      const room = await api.createRoom({ ...roomPayload, files: draft.files });
       
       saveHostToken(room.id, room.hostToken);
       if (room.inviteCode) saveInviteCode(room.id, room.inviteCode);
@@ -148,309 +193,17 @@ export function ChallengesPage() {
     }
   };
 
-  const startRelayFrontend = async () => {
-    if (!user) {
-      navigate("/");
-      return;
-    }
-
-    const displayName = user.displayName || user.username || user.email?.split("@")[0] || "Developer";
-    const uniqueCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-    setIsStartingRelay(true);
-    setError(null);
-
+  const startRelay = async () => {
+    if (!requireAccount()) return;
+    const displayName = user.displayName || user.username || 'Developer';
+    setIsStartingRelay(true); setError(null);
     try {
-      saveUsername(displayName);
-      const room = await api.createRoom({
-        name: `${displayName}'s Relay Frontend ${uniqueCode}`,
-        username: displayName,
-        visibility: "private",
-        max: relayTeamSize,
-        userId: user.uid || user.id || null,
-        initialLanguage: "html",
-        isChallenge: false,
-        files: [
-          {
-            name: "App.jsx",
-            language: "javascript",
-            code: `const sections = [
-  { name: "Navbar + Hero", owner: "Unclaimed", status: "Planning" },
-  { name: "Features / Cards", owner: "Unclaimed", status: "Planning" },
-  { name: "Main Content", owner: "Unclaimed", status: "Planning" },
-  { name: "CTA + Footer", owner: "Unclaimed", status: "Planning" }
-];
-
-export default function App() {
-  return (
-    <main className="relay-app">
-      <nav className="relay-nav">
-        <strong>Relay Frontend</strong>
-        <span>Own. Build. Relay. Integrate. Ship.</span>
-      </nav>
-      <section className="relay-hero">
-        <p className="eyebrow">Team UI Challenge</p>
-        <h1>Build one polished responsive interface together.</h1>
-        <p>Claim sections, help teammates, integrate the whole page, and submit as one team.</p>
-      </section>
-      <section className="relay-board">
-        {sections.map((section) => (
-          <article key={section.name}>
-            <h2>{section.name}</h2>
-            <p>{section.owner}</p>
-            <span>{section.status}</span>
-          </article>
-        ))}
-      </section>
-    </main>
-  );
-}
-`
-          },
-          {
-            name: "styles.css",
-            language: "css",
-            code: `.relay-app {
-  min-height: 100vh;
-  background: #050b14;
-  color: white;
-  font-family: Inter, system-ui, sans-serif;
-}
-
-.relay-nav {
-  display: flex;
-  justify-content: space-between;
-  padding: 24px 6vw;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.relay-hero {
-  padding: 80px 6vw 48px;
-  max-width: 760px;
-}
-
-.eyebrow {
-  color: var(--primary-color, #ff7b00);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.relay-hero h1 {
-  font-size: clamp(2.4rem, 7vw, 5rem);
-  line-height: 0.98;
-}
-
-.relay-board {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  padding: 0 6vw 64px;
-}
-
-.relay-board article {
-  border: 1px solid rgba(0, 150, 255, 0.28);
-  border-radius: 8px;
-  padding: 18px;
-  background: rgba(255, 255, 255, 0.04);
-}
-`
-          }
-        ],
-        notes: {
-          text: `Relay Frontend plan
-
-Briefing: inspect the reference UI and agree on the target.
-Breakdown: split the interface into Navbar, Hero, Features, Main Content, CTA, and Footer.
-Ownership: each player claims responsibility for sections, but everyone can help everywhere.
-Build: work in parallel and keep reusable components/styles consistent.
-Help: request review when layout, responsiveness, or spacing breaks.
-Integration: final phase is for responsiveness, accessibility, visual consistency, and polish.
-
-Scoring: visual accuracy, responsive behavior, code quality, accessibility, integration, and collaboration.`,
-          draws: []
-        }
-      });
-
-      saveHostToken(room.id, room.hostToken);
-      if (room.inviteCode) saveInviteCode(room.id, room.inviteCode);
-      navigate(`/code/private/${room.id}`, { state: { relayMode: true, teamSize: relayTeamSize } });
-    } catch (err) {
-      setError(err.message || "Failed to start Relay Frontend");
-    } finally {
-      setIsStartingRelay(false);
-    }
-  };
-
-  const startRelayBackend = async () => {
-    if (!user) {
-      navigate("/");
-      return;
-    }
-
-    const displayName = user.displayName || user.username || user.email?.split("@")[0] || "Developer";
-    const uniqueCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-    setIsStartingBackendRelay(true);
-    setError(null);
-
-    try {
-      saveUsername(displayName);
-      const room = await api.createRoom({
-        name: `${displayName}'s Relay Backend ${uniqueCode}`,
-        username: displayName,
-        visibility: "private",
-        max: relayTeamSize,
-        userId: user.uid || user.id || null,
-        problemId: "relay-backend",
-        initialLanguage: "javascript",
-        isChallenge: false,
-        files: [
-          {
-            name: "server.js",
-            language: "javascript",
-            code: `import express from "express";
-import authRoutes from "./routes/auth.routes.js";
-import productRoutes from "./routes/product.routes.js";
-import orderRoutes from "./routes/order.routes.js";
-
-const app = express();
-app.use(express.json());
-
-app.get("/api/health", (_request, response) => {
-  response.json({ ok: true, service: "relay-backend" });
-});
-
-app.use("/api/auth", authRoutes);
-app.use("/api/products", productRoutes);
-app.use("/api/orders", orderRoutes);
-
-app.listen(3000, () => {
-  console.log("Relay Backend API running on port 3000");
-});
-`
-          },
-          {
-            name: "auth.routes.js",
-            language: "javascript",
-            code: `import { Router } from "express";
-
-const router = Router();
-
-router.post("/register", (request, response) => {
-  response.status(201).json({ id: "user_1", email: request.body.email });
-});
-
-router.post("/login", (_request, response) => {
-  response.json({ token: "dev-token", user: { id: "user_1", role: "customer" } });
-});
-
-export default router;
-`
-          },
-          {
-            name: "product.routes.js",
-            language: "javascript",
-            code: `import { Router } from "express";
-
-const router = Router();
-const products = [
-  { id: "prod_1", name: "Starter Hoodie", price: 499 },
-  { id: "prod_2", name: "Code Mug", price: 199 }
-];
-
-router.get("/", (_request, response) => {
-  response.json({ data: products });
-});
-
-router.get("/:id", (request, response) => {
-  const product = products.find((item) => item.id === request.params.id);
-  if (!product) return response.status(404).json({ error: "Product not found" });
-  response.json({ data: product });
-});
-
-export default router;
-`
-          },
-          {
-            name: "order.routes.js",
-            language: "javascript",
-            code: `import { Router } from "express";
-
-const router = Router();
-
-router.post("/", (request, response) => {
-  const { productId, quantity } = request.body;
-  if (!productId || !quantity) {
-    return response.status(400).json({ error: "productId and quantity are required" });
-  }
-  response.status(201).json({
-    id: "order_1",
-    productId,
-    quantity,
-    status: "created"
-  });
-});
-
-router.get("/:id", (request, response) => {
-  response.json({ data: { id: request.params.id, status: "created" } });
-});
-
-export default router;
-`
-          },
-          {
-            name: "integration-checklist.md",
-            language: "markdown",
-            code: `# Relay Backend Integration Checklist
-
-## API contracts
-- POST /api/auth/register
-- POST /api/auth/login
-- GET /api/products
-- GET /api/products/:id
-- POST /api/orders
-- GET /api/orders/:id
-
-## Team responsibilities
-- Authentication + Users
-- Product APIs + Search
-- Orders + Business Logic
-- Database + Payment Simulation
-- Validation + Security
-- Tests + Integration
-
-## Final phase
-- Run unit tests
-- Run API tests
-- Check auth and authorization
-- Check validation errors
-- Check database persistence
-- Fix inconsistent response formats
-- Ship one reliable backend together
-`
-          }
-        ],
-        notes: {
-          text: `Relay Backend plan
-
-Briefing: agree on the real-world backend problem and required APIs.
-System breakdown: split Authentication, API Development, Database, Business Logic, Validation, Security, Testing, and Integration.
-API contract phase: define methods, routes, request bodies, responses, status codes, and error shape before coding.
-Ownership: each player owns a service area, but anyone can review, debug, and help.
-Parallel development: build routes, controllers, services, models, validators, and tests together.
-Integration phase: connect services, verify auth, validate database behavior, run tests, debug failures, and harden security.
-
-Scoring: functional correctness, API integration, tests, database quality, security, code quality, and reliability.`,
-          draws: []
-        }
-      });
-
-      saveHostToken(room.id, room.hostToken);
-      if (room.inviteCode) saveInviteCode(room.id, room.inviteCode);
-      navigate(`/code/private/${room.id}`, { state: { relayBackendMode: true, teamSize: relayTeamSize } });
-    } catch (err) {
-      setError(err.message || "Failed to start Relay Backend");
-    } finally {
-      setIsStartingBackendRelay(false);
-    }
+      const room = await api.createRoom({ name: `${displayName}'s Relay ${Date.now().toString(36)}`, username: displayName,
+        userId: user.uid || user.id, visibility: 'private', max: relayTeamSize, relayMode: String(relayMode).toLowerCase() });
+      saveUsername(displayName); saveHostToken(room.id, room.hostToken); saveInviteCode(room.id, room.inviteCode);
+      navigate(`/relay/${room.id}`);
+    } catch (err) { setError(err.message || 'Could not create Relay'); }
+    finally { setIsStartingRelay(false); }
   };
 
   return (
@@ -471,14 +224,6 @@ Scoring: functional correctness, API integration, tests, database quality, secur
               <Filter size={15} />
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter challenges by status">
                 {statusOptions.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="challenge-native-select">
-              <ArrowDownUp size={15} />
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort challenges">
-                {sortOptions.map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
               </select>
@@ -519,6 +264,7 @@ Scoring: functional correctness, API integration, tests, database quality, secur
 
           {visibleChallengeIds.includes("random") && (
           <article className="challenge-card challenge-choice-card" style={{ order: visibleChallengeIds.indexOf("random") }}>
+            <FavoriteButton modeId="random" />
             <div className="challenge-card-head">
               <div className="challenge-card-icon">
                 <Sparkles size={30} />
@@ -578,15 +324,16 @@ Scoring: functional correctness, API integration, tests, database quality, secur
 
           {visibleChallengeIds.includes("relay") && (
           <article className="challenge-card challenge-choice-card relay-challenge-card" style={{ order: visibleChallengeIds.indexOf("relay") }}>
+             <FavoriteButton modeId={relayMode === "frontend" ? "frontend" : "relay"} />
             <div className="challenge-card-head">
               <div className="challenge-card-icon">
                 <GitBranch size={30} />
               </div>
               <div className="challenge-card-copy">
                 <h2>{relayContent.title}</h2>
-                <p>{relayMode === "frontend"
-                  ? "Build one interface together: divide sections, relay progress, and polish the final responsive product."
-                  : "Build one backend together: split services, connect APIs, debug, and ship a reliable system."}
+                 <p>{relayMode === "frontend"
+                   ? "Choose your section in 15 seconds. Build privately, share leftover tasks, and preview the combined page."
+                   : "Solve one data-summary challenge together with private JavaScript functions."}
                 </p>
               </div>
               <span className="challenge-status-pill">
@@ -597,18 +344,26 @@ Scoring: functional correctness, API integration, tests, database quality, secur
             <div className="challenge-difficulty-picker challenge-segmented">
               {[
                 ["frontend", "Frontend"],
-                ["backend", "Backend"]
+                ["dsa", "DSA (JavaScript)"]
               ].map(([value, label]) => (
                 <button
+                  type="button"
                   key={value}
                   onClick={() => setRelayMode(value)}
                   className={relayMode === value ? "active" : ""}
+                  aria-pressed={relayMode === value}
                 >
                   {label}
                 </button>
               ))}
             </div>
 
+            <label className="relay-team-size-control">
+              <span><Users size={15} /> Team size</span>
+              <select value={relayTeamSize} onChange={event => setRelayTeamSize(Number(event.target.value))} aria-label="Relay team size">
+                {[2, 3, 4, 5].map(size => <option key={size} value={size}>{size} players</option>)}
+              </select>
+            </label>
             <div className="relay-feature-grid challenge-chip-grid">
               {relayContent.features.map(([Icon, label]) => (
                 <div className="challenge-feature-chip" key={label}>
@@ -620,10 +375,10 @@ Scoring: functional correctness, API integration, tests, database quality, secur
             <div className="challenge-card-actions">
               <button
                 className="challenge-primary-action"
-                onClick={relayMode === "frontend" ? startRelayFrontend : startRelayBackend}
-                disabled={isStartingRelay || isStartingBackendRelay}
+                onClick={startRelay}
+                disabled={isStartingRelay}
               >
-                {isStartingRelay || isStartingBackendRelay ? (
+                {isStartingRelay ? (
                   <>
                     <Loader2 size={17} className="spin" /> Creating Relay...
                   </>
@@ -645,6 +400,46 @@ Scoring: functional correctness, API integration, tests, database quality, secur
               <h2>No challenges found</h2>
               <p>Change the filter to see more challenge types.</p>
             </section>
+          )}
+
+          {visibleChallengeIds.includes("codewars") && (
+          <article className="challenge-card challenge-choice-card codewars-challenge-card" style={{ order: visibleChallengeIds.indexOf("codewars") }}>
+            <FavoriteButton modeId="battles" />
+            <div className="challenge-card-head">
+              <div className="challenge-card-icon">
+                <Sword size={31} />
+              </div>
+              <div className="challenge-card-copy">
+                <h2>Codewars</h2>
+                <p>Create a competitive war room, choose your battle type, and let teams fight for the fastest correct solution.</p>
+              </div>
+              <span className="challenge-status-pill">
+                <span /> Battle mode
+              </span>
+            </div>
+
+            <div className="relay-feature-grid challenge-chip-grid">
+              {[
+                [Sword, "Programming"],
+                [Bug, "Debugging"],
+                [Users, "Team battle"],
+                [Trophy, "Ranked winner"]
+              ].map(([Icon, label]) => (
+                <div className="challenge-feature-chip" key={label}>
+                  <Icon size={15} /> {label}
+                </div>
+              ))}
+            </div>
+
+            <div className="challenge-card-actions">
+              <button className="challenge-primary-action" onClick={() => navigate("/war-arena/create")}>
+                <Play size={15} fill="currentColor" /> Start Challenge
+              </button>
+              <button type="button" className="challenge-link-action" onClick={() => setActiveInfoPanel("codewars")}>
+                <Info size={15} /> How it works <span aria-hidden="true">-&gt;</span>
+              </button>
+            </div>
+          </article>
           )}
           
         </div>

@@ -1,21 +1,25 @@
 import fs from 'fs';
 import crypto from 'crypto';
 import puppeteer from 'puppeteer';
-import pixelmatch from 'pixelmatch';
-import { ssim } from 'ssim.js';
 import { PNG } from 'pngjs';
-import { createFirestore } from '../config/firebase.js';
+import { challengeStore, validateChallengeFiles, withChallengeLock } from '../services/challengeStore.js';
+import { compareChallengeImages } from '../services/challengeScoring.js';
+import { challengeCatalog, curatedChallengeHtml } from '../data/challengeCatalog.js';
+import { buildPreview, withChallengePolicy } from '../../shared/projectPreview.js';
 
 const getGroqKey = () => process.env.GROQ_API_KEY;
 const getGroqModel = () => process.env.GROQ_MODEL || "openai/gpt-oss-20b";
 const challengeTargets = new Map();
-let challengeDbCache;
-const CHALLENGE_TTL_MS = Number(process.env.CHALLENGE_TTL_MS || 60 * 60 * 1000);
+
+const CHALLENGE_TTL_MS = 0; // Durable practice targets.
 const MAX_CHALLENGE_TARGETS = Number(process.env.MAX_CHALLENGE_TARGETS || 250);
 const MAX_CHALLENGE_HTML_BYTES = Number(process.env.MAX_CHALLENGE_HTML_BYTES || 300_000);
 const GROQ_CHALLENGE_TIMEOUT_MS = Number(process.env.GROQ_CHALLENGE_TIMEOUT_MS || 6000);
 const GROQ_CHALLENGE_COOLDOWN_MS = Number(process.env.GROQ_CHALLENGE_COOLDOWN_MS || 30000);
 const GROQ_CHALLENGE_MAX_TOKENS = Number(process.env.GROQ_CHALLENGE_MAX_TOKENS || 1400);
+const CHALLENGE_VIEWPORT_WIDTH = 800;
+const CHALLENGE_VIEWPORT_HEIGHT = 600;
+const MAX_CHALLENGE_CAPTURE_HEIGHT = Number(process.env.MAX_CHALLENGE_CAPTURE_HEIGHT || 2000);
 let rendererBrowserPromise = null;
 let groqChallengeCooldownUntil = 0;
 
@@ -48,6 +52,14 @@ export function warmChallengeRenderer() {
   return getRendererBrowser().then(() => true);
 }
 
+export async function closeChallengeRenderer() {
+  if (!rendererBrowserPromise) return;
+  const browserPromise = rendererBrowserPromise;
+  rendererBrowserPromise = null;
+  const browser = await browserPromise.catch(() => null);
+  await browser?.close().catch(() => {});
+}
+
 const pageArchetypes = {
   easy: [
     "A simple centered login form with a logo, email input, password input, and a submit button.",
@@ -71,12 +83,15 @@ const pageArchetypes = {
 
 // Generate a target UI challenge using LLM
 export const generateChallenge = async (req, res) => {
-  const { difficulty = 'easy' } = req.body;
+  const curated = req.body.templateId ? challengeCatalog.find(item => item.id === req.body.templateId) : null;
+  if (req.body.templateId && !curated) return res.status(400).json({ error: 'Unknown curated challenge.' });
+  const difficulty = curated?.difficulty || req.body.difficulty || 'easy';
 
   // Fallback to 'easy' if difficulty is invalid
-  const diffLevel = pageArchetypes[difficulty.toLowerCase()] ? difficulty.toLowerCase() : 'easy';
+  const requestedDifficulty = String(difficulty || 'easy').toLowerCase();
+  const diffLevel = pageArchetypes[requestedDifficulty] ? requestedDifficulty : 'easy';
   const archetypes = pageArchetypes[diffLevel];
-  const randomArchetype = archetypes[Math.floor(Math.random() * archetypes.length)];
+  const randomArchetype = curated?.title || archetypes[Math.floor(Math.random() * archetypes.length)];
 
   const prompt = `You are an expert product designer and frontend engineer. Create a polished, modern UI target for a frontend recreation challenge.
 Difficulty Level: ${diffLevel.toUpperCase()}.
@@ -101,17 +116,29 @@ Requirements:
 12. Keep the HTML concise enough to render quickly.`;
 
   try {
-    const htmlCode = await createChallengeHtml(prompt, diffLevel, randomArchetype);
+    let htmlCode = curated ? curatedChallengeHtml(curated.id) : await createChallengeHtml(prompt, diffLevel, randomArchetype);
 
     // Render HTML to Image using Puppeteer
-    const base64Image = await renderHtmlToImage(htmlCode);
+    let base64Image = await renderHtmlToImage(htmlCode);
+    const qualityReport = analyzeChallengeImage(base64Image);
+    if (!curated && !qualityReport.acceptable) {
+      console.warn("Generated challenge target was too sparse. Using local challenge template.", qualityReport);
+      htmlCode = generateLocalChallengeHtml(diffLevel, randomArchetype);
+      base64Image = await renderHtmlToImage(htmlCode);
+    }
+
     const challenge = await storeChallengeTarget({
       difficulty: diffLevel,
       archetype: randomArchetype,
       htmlCode,
+      ownerId: req.firebaseUser?.uid || null,
+      skill: curated?.skill || 'Mixed layout',
       targetImage: `data:image/png;base64,${base64Image}`
     });
 
+    if (req.firebaseUser?.uid) {
+      await challengeStore.set('challengeDrafts', challenge.id, { id: challenge.id, challengeId: challenge.id, ownerId: req.firebaseUser.uid, title: randomArchetype, difficulty: diffLevel, skill: challenge.skill, files: [{ name: 'index.html', language: 'html', code: '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main></main></body></html>' }, { name: 'styles.css', language: 'css', code: 'body { margin: 0; font-family: system-ui, sans-serif; }' }], updatedAt: Date.now(), bestScore: null, history: [] });
+    }
     res.json({
       challengeId: challenge.id,
       targetImage: challenge.targetImage,
@@ -124,66 +151,29 @@ Requirements:
   }
 };
 
-function getChallengeDb() {
-  if (challengeDbCache !== undefined) return challengeDbCache;
-  try {
-    const db = createFirestore();
-    challengeDbCache = db && !db.isMock ? db : null;
-  } catch (error) {
-    challengeDbCache = null;
-    throw error;
-  }
-  return challengeDbCache;
-}
-
 async function storeChallengeTarget(challenge) {
-  cleanupChallengeTargets();
   const id = crypto.randomUUID();
-  const expiresAt = Date.now() + CHALLENGE_TTL_MS;
-  const saved = { ...challenge, id, expiresAt };
+  const saved = { ...challenge, id, expiresAt: null };
+  const { targetImage: _image, ...durable } = saved;
+  await challengeStore.set('challengeTargets', id, durable);
   challengeTargets.set(id, saved);
-
-  while (challengeTargets.size > MAX_CHALLENGE_TARGETS) {
-    const oldestId = challengeTargets.keys().next().value;
-    challengeTargets.delete(oldestId);
-  }
-
-  const db = getChallengeDb();
-  if (db) {
-    await db.collection("challengeTargets").doc(id).set(saved, { merge: true });
-  }
-
+  while (challengeTargets.size > MAX_CHALLENGE_TARGETS) challengeTargets.delete(challengeTargets.keys().next().value);
   return saved;
 }
-
 async function getChallengeTarget(challengeId) {
-  cleanupChallengeTargets();
-  const cleanId = String(challengeId || "").trim();
-  if (!cleanId) return null;
-  const inMemory = challengeTargets.get(cleanId);
-  if (inMemory) return inMemory;
-
-  const db = getChallengeDb();
-  if (!db) return null;
-
-  const doc = await db.collection("challengeTargets").doc(cleanId).get();
-  if (!doc.exists) return null;
-  const saved = { id: doc.id, ...doc.data() };
-  if (!saved.expiresAt || saved.expiresAt <= Date.now()) {
-    await db.collection("challengeTargets").doc(cleanId).delete();
-    return null;
-  }
-  challengeTargets.set(cleanId, saved);
+  const id = String(challengeId || '').trim();
+  if (!id) return null;
+  if (challengeTargets.has(id)) return challengeTargets.get(id);
+  const saved = await challengeStore.get('challengeTargets', id);
+  if (!saved) return null;
+  if (!saved.targetImage && saved.htmlCode) saved.targetImage = 'data:image/png;base64,' + await renderHtmlToImage(saved.htmlCode);
   return saved;
 }
-
-function cleanupChallengeTargets() {
-  const now = Date.now();
-  for (const [id, challenge] of challengeTargets.entries()) {
-    if (!challenge?.expiresAt || challenge.expiresAt <= now) {
-      challengeTargets.delete(id);
-    }
-  }
+export async function getSavedChallenge(req, res) {
+  const challenge = await getChallengeTarget(req.params.id);
+  if (!challenge || challenge.ownerId !== req.firebaseUser.uid) return res.status(404).json({ error: 'Challenge not found.' });
+  const mobileImage = 'data:image/png;base64,' + await renderHtmlToImage(challenge.htmlCode, 375);
+  res.json({ challengeId: challenge.id, difficulty: challenge.difficulty, targetImage: challenge.targetImage, mobileImage, expiresAt: null });
 }
 
 async function createChallengeHtml(prompt, difficulty, archetype) {
@@ -361,177 +351,142 @@ ${isInbox ? '<section class="content"><div class="card"><div class="mail"><b>Des
 
 // Submit user's code and score it against the target
 export const submitChallenge = async (req, res) => {
-  const { userCode, challengeId } = req.body;
-  
-  if (!userCode || !challengeId) {
-    return res.status(400).json({ error: "Missing userCode or challengeId" });
+  const { challengeId } = req.body;
+  let userCode = req.body.userCode;
+  let submittedFiles;
+  if (req.body.files) {
+    try { submittedFiles = validateChallengeFiles(req.body.files); userCode = buildPreview(submittedFiles, req.body.entryFile); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
   }
-
-  const challenge = await getChallengeTarget(challengeId);
-  if (!challenge) {
-    return res.status(404).json({ error: "Challenge target was not found or has expired. Generate a new challenge." });
-  }
-
-  if (Buffer.byteLength(String(userCode), "utf8") > MAX_CHALLENGE_HTML_BYTES) {
-    return res.status(413).json({ error: "Challenge submission is too large." });
-  }
-
+  if (!userCode || !challengeId) return res.status(400).json({ error: 'Missing userCode or challengeId' });
+  if (typeof userCode !== 'string' || Buffer.byteLength(userCode, 'utf8') > MAX_CHALLENGE_HTML_BYTES) return res.status(413).json({ error: 'Challenge submission is too large.' });
   try {
-    const userImageBase64 = await renderHtmlToImage(userCode);
-    const userImageURI = `data:image/png;base64,${userImageBase64}`;
-
-    // Convert base64 Data URIs to Buffers
-    const getBuffer = (dataUri) => Buffer.from(dataUri.split(',')[1], 'base64');
-    
-    const targetBuffer = getBuffer(challenge.targetImage);
-    const userBuffer = getBuffer(userImageURI);
-
-    const targetPng = PNG.sync.read(targetBuffer);
-    const userPng = PNG.sync.read(userBuffer);
-
-    const { width, height } = targetPng;
-    
-    // 1. Calculate Baseline Difference (Empty Background vs Target)
-    // Extract background color from top-left pixel (x=0, y=0)
-    const bgR = targetPng.data[0];
-    const bgG = targetPng.data[1];
-    const bgB = targetPng.data[2];
-    const bgA = targetPng.data[3];
-    
-    const baselinePng = new PNG({ width, height });
-    for (let i = 0; i < baselinePng.data.length; i += 4) {
-      baselinePng.data[i] = bgR;
-      baselinePng.data[i + 1] = bgG;
-      baselinePng.data[i + 2] = bgB;
-      baselinePng.data[i + 3] = bgA;
+    const challenge = await getChallengeTarget(challengeId);
+    if (!challenge) return res.status(404).json({ error: 'Challenge target was not found or has expired. Generate a new challenge.' });
+    if (challenge.ownerId && challenge.ownerId !== req.firebaseUser?.uid) return res.status(403).json({ error: 'This challenge belongs to another account.' });
+    const reports = [];
+    for (const width of [800, 375]) {
+      const target = width === 800 ? challenge.targetImage : 'data:image/png;base64,' + await renderHtmlToImage(challenge.htmlCode, width);
+      const submitted = 'data:image/png;base64,' + await renderHtmlToImage(userCode, width);
+      reports.push({ width, targetImage: target, userImage: submitted, ...compareChallengeImages(target, submitted, normalizeComparisonPngs) });
     }
-
-    const baselineDiffPixels = pixelmatch(
-      targetPng.data,
-      baselinePng.data,
-      null,
-      width,
-      height,
-      { threshold: 0.1, includeAA: true }
-    );
-
-    // 2. Calculate User Difference
-    const userDiffPixels = pixelmatch(
-      targetPng.data,
-      userPng.data,
-      null,
-      width,
-      height,
-      { threshold: 0.1, includeAA: true }
-    );
-    
-    // Calculate score based on foreground recreation accuracy
-    let pixelMatchScore = 0;
-    if (baselineDiffPixels === 0) {
-      pixelMatchScore = userDiffPixels === 0 ? 100 : 0;
-    } else {
-      pixelMatchScore = Math.max(0, 1 - (userDiffPixels / baselineDiffPixels)) * 100;
-    }
-
-    // 2. SSIM calculates structural similarity (perceived likeness)
-    // Convert PNG data format to the format ssim.js expects
-    const targetImageData = { data: new Uint8ClampedArray(targetPng.data), width, height };
-    const userImageData = { data: new Uint8ClampedArray(userPng.data), width, height };
-    const ssimResult = ssim(targetImageData, userImageData);
-    
-    // SSIM returns a value from -1 to 1. Convert it to a 0-100 score.
-    // If it's structurally identical, it returns 1.
-    const ssimScore = Math.max(0, ssimResult.mssim) * 100;
-
-    const perceptualScore = calculatePerceptualScore(targetPng, userPng);
-    const rawFinalScore = (pixelMatchScore * 0.2) + (ssimScore * 0.35) + (perceptualScore * 0.45);
-    let curvedScore = Math.round(Math.pow(rawFinalScore / 100, 0.4) * 100);
-
-    if (perceptualScore >= 88 && ssimScore >= 70) curvedScore = Math.max(curvedScore, 90);
-    else if (perceptualScore >= 80 && ssimScore >= 60) curvedScore = Math.max(curvedScore, 85);
-    else if (perceptualScore >= 70) curvedScore = Math.max(curvedScore, 78);
-    curvedScore = Math.min(100, curvedScore);
-
-    let feedback = "";
-    if (curvedScore >= 95) feedback = "Pixel perfect! You absolutely crushed it!";
-    else if (curvedScore >= 80) feedback = "Great job! A few layout differences, but very close.";
-    else if (curvedScore >= 60) feedback = "You're getting there, but some styling is quite off.";
-    else feedback = "Looks like a completely different page. Keep practicing!";
-
-    res.json({
-      challengeId,
-      score: curvedScore,
-      feedback,
-      userImage: userImageURI,
-      targetImage: challenge.targetImage
-    });
-  } catch (error) {
-    console.error("Submit Challenge Error:", error);
-    res.status(500).json({ error: error.message || "Failed to score challenge" });
-  }
-};
-
-function calculatePerceptualScore(targetPng, userPng) {
-  const columns = 32;
-  const rows = 24;
-  const shifts = [-12, 0, 12];
-  let bestScore = 0;
-
-  for (const shiftX of shifts) {
-    for (const shiftY of shifts) {
-      let totalDifference = 0;
-      let samples = 0;
-
-      for (let row = 0; row < rows; row += 1) {
-        for (let column = 0; column < columns; column += 1) {
-          const targetColor = averageCellColor(targetPng, column, row, columns, rows, 0, 0);
-          const userColor = averageCellColor(userPng, column, row, columns, rows, shiftX, shiftY);
-          const diff = Math.hypot(
-            targetColor[0] - userColor[0],
-            targetColor[1] - userColor[1],
-            targetColor[2] - userColor[2]
-          ) / 441.6729559300637;
-
-          totalDifference += diff;
-          samples += 1;
+    const score = Math.round(reports.reduce((sum, report) => sum + report.score, 0) / reports.length);
+    const feedback = score >= 99 ? 'Near-identical at both tested widths.' : 'Compare the highlighted differences at desktop and mobile widths.';
+    const response = { challengeId, score, feedback, reports, userImage: reports[0].userImage, targetImage: reports[0].targetImage, scoreDetails: { formula: '50% foreground pixel accuracy + 50% structural similarity, averaged across 800px and 375px viewports.' } };
+    if (req.firebaseUser?.uid) {
+      const submittedAt = Date.now();
+      const files = submittedFiles || [{ name: 'index.html', language: 'html', code: userCode }];
+      const attemptId = crypto.randomUUID();
+      await challengeStore.set('challengeAttempts', attemptId, { id: attemptId, ownerId: req.firebaseUser.uid, challengeId, files, score, submittedAt });
+      await withChallengeLock(challengeId, async () => {
+        const draft = await challengeStore.get('challengeDrafts', challengeId);
+        if (draft?.ownerId === req.firebaseUser.uid) {
+          await challengeStore.set('challengeDrafts', challengeId, { ...draft, bestScore: Math.max(draft.bestScore || 0, score), updatedAt: submittedAt, history: [...(draft.history || []), { id: attemptId, score, submittedAt }].slice(-30) });
         }
-      }
-
-      bestScore = Math.max(bestScore, Math.max(0, 1 - (totalDifference / samples)) * 100);
+      });
+      response.attemptId = attemptId;
     }
+    res.json(response);
+  } catch (error) { console.error('Challenge submission failed:', error.message); res.status(500).json({ error: error.message || 'Failed to score challenge' }); }
+};
+function normalizeComparisonPngs(targetPng, userPng) {
+  const width = Math.max(targetPng.width, userPng.width);
+  const height = Math.max(targetPng.height, userPng.height);
+
+  if (targetPng.width === width && targetPng.height === height && userPng.width === width && userPng.height === height) {
+    return { targetPng, userPng };
   }
 
-  return bestScore;
+  return {
+    targetPng: padPngToSize(targetPng, width, height),
+    userPng: padPngToSize(userPng, width, height)
+  };
 }
 
-function averageCellColor(png, column, row, columns, rows, shiftX, shiftY) {
-  const cellWidth = png.width / columns;
-  const cellHeight = png.height / rows;
-  const startX = Math.max(0, Math.floor((column * cellWidth) + shiftX));
-  const endX = Math.min(png.width, Math.ceil(((column + 1) * cellWidth) + shiftX));
-  const startY = Math.max(0, Math.floor((row * cellHeight) + shiftY));
-  const endY = Math.min(png.height, Math.ceil(((row + 1) * cellHeight) + shiftY));
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let count = 0;
+function padPngToSize(sourcePng, width, height) {
+  const output = new PNG({ width, height });
+  const background = [
+    sourcePng.data[0] ?? 15,
+    sourcePng.data[1] ?? 23,
+    sourcePng.data[2] ?? 42,
+    sourcePng.data[3] ?? 255
+  ];
 
-  for (let y = startY; y < endY; y += 1) {
-    for (let x = startX; x < endX; x += 1) {
-      const index = (png.width * y + x) << 2;
-      red += png.data[index];
-      green += png.data[index + 1];
-      blue += png.data[index + 2];
-      count += 1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (width * y + x) << 2;
+      output.data[index] = background[0];
+      output.data[index + 1] = background[1];
+      output.data[index + 2] = background[2];
+      output.data[index + 3] = background[3];
     }
   }
 
-  if (!count) return [0, 0, 0];
-  return [red / count, green / count, blue / count];
+  for (let y = 0; y < sourcePng.height; y += 1) {
+    for (let x = 0; x < sourcePng.width; x += 1) {
+      const sourceIndex = (sourcePng.width * y + x) << 2;
+      const outputIndex = (width * y + x) << 2;
+      output.data[outputIndex] = sourcePng.data[sourceIndex];
+      output.data[outputIndex + 1] = sourcePng.data[sourceIndex + 1];
+      output.data[outputIndex + 2] = sourcePng.data[sourceIndex + 2];
+      output.data[outputIndex + 3] = sourcePng.data[sourceIndex + 3];
+    }
+  }
+
+  return output;
+}
+
+function analyzeChallengeImage(base64Image) {
+  try {
+    const png = PNG.sync.read(Buffer.from(base64Image, "base64"));
+    const background = [
+      png.data[0],
+      png.data[1],
+      png.data[2]
+    ];
+    const colorBuckets = new Set();
+    const saturatedBuckets = new Set();
+    let foregroundSamples = 0;
+    let samples = 0;
+
+    for (let y = 0; y < png.height; y += 8) {
+      for (let x = 0; x < png.width; x += 8) {
+        const index = (png.width * y + x) << 2;
+        const red = png.data[index];
+        const green = png.data[index + 1];
+        const blue = png.data[index + 2];
+        const diff = Math.hypot(red - background[0], green - background[1], blue - background[2]);
+        const max = Math.max(red, green, blue);
+        const min = Math.min(red, green, blue);
+
+        samples += 1;
+        if (diff > 28) foregroundSamples += 1;
+        colorBuckets.add(`${Math.round(red / 32)},${Math.round(green / 32)},${Math.round(blue / 32)}`);
+        if (max - min > 45 && max > 90) {
+          saturatedBuckets.add(`${Math.round(red / 48)},${Math.round(green / 48)},${Math.round(blue / 48)}`);
+        }
+      }
+    }
+
+    const foregroundRatio = samples ? foregroundSamples / samples : 0;
+    const acceptable = foregroundRatio >= 0.12 && colorBuckets.size >= 16 && saturatedBuckets.size >= 3;
+
+    return {
+      acceptable,
+      foregroundRatio: Number(foregroundRatio.toFixed(3)),
+      colorBuckets: colorBuckets.size,
+      saturatedBuckets: saturatedBuckets.size
+    };
+  } catch (error) {
+    return {
+      acceptable: false,
+      error: error.message
+    };
+  }
 }
 
 // Helper function to render HTML string to a base64 PNG
-async function renderHtmlToImage(html) {
+async function renderHtmlToImage(html, viewportWidth = CHALLENGE_VIEWPORT_WIDTH, compactSection = false) {
   const browser = await getRendererBrowser();
   const page = await browser.newPage();
   try {
@@ -539,7 +494,7 @@ async function renderHtmlToImage(html) {
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       const url = request.url();
-      const shouldBlock = /^(https?|file):/i.test(url);
+      const shouldBlock = /^(https?|file):/i.test(url) || request.resourceType() === 'image';
       if (shouldBlock) {
         request.abort();
       } else {
@@ -547,17 +502,47 @@ async function renderHtmlToImage(html) {
       }
     });
 
-    // Set a standard viewport size for the challenge
-    await page.setViewport({ width: 800, height: 600 });
+    // Set a standard viewport size for layout, then capture the full document height.
+    await page.setViewport({ width: viewportWidth, height: CHALLENGE_VIEWPORT_HEIGHT });
 
     // Wait for DOM readiness only; external requests are blocked for challenge safety.
-    await page.setContent(html, {
+    await page.setContent(withChallengePolicy(html), {
       waitUntil: 'domcontentloaded',
       timeout: 15000
     });
 
+    const documentHeight = await page.evaluate((compact) => {
+      const body = document.body;
+      if (compact && body) {
+        const bottomMargin = Number.parseFloat(document.defaultView.getComputedStyle(body).marginBottom) || 0;
+        return Math.max(1, body.getBoundingClientRect().bottom + bottomMargin, body.scrollHeight);
+      }
+      const element = document.documentElement;
+      return Math.max(
+        body?.scrollHeight || 0,
+        body?.offsetHeight || 0,
+        element?.clientHeight || 0,
+        element?.scrollHeight || 0,
+        element?.offsetHeight || 0
+      );
+    }, compactSection);
+    const captureHeight = Math.min(
+      Math.max(compactSection ? 1 : CHALLENGE_VIEWPORT_HEIGHT, Math.ceil(documentHeight || CHALLENGE_VIEWPORT_HEIGHT)),
+      MAX_CHALLENGE_CAPTURE_HEIGHT
+    );
+
     // Take screenshot as base64 string
-    const screenshotBuffer = await page.screenshot({ type: 'png', encoding: 'base64' });
+    const screenshotBuffer = await page.screenshot({
+      type: 'png',
+      encoding: 'base64',
+      captureBeyondViewport: true,
+      clip: {
+        x: 0,
+        y: 0,
+        width: viewportWidth,
+        height: captureHeight
+      }
+    });
     return screenshotBuffer;
   } finally {
     await page.close().catch(() => {});
@@ -613,3 +598,9 @@ function findLocalBrowserExecutable() {
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
+
+export const __challengeInternals = {
+  renderHtmlToImage,
+  normalizeComparisonPngs,
+  closeChallengeRenderer
+};

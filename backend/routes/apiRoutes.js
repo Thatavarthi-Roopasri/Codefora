@@ -3,7 +3,9 @@ import { createCompilerRoutes } from "./compiler.js";
 import { adminAuth } from "../middleware/adminAuth.js";
 import { firebaseAuth, optionalFirebaseAuth, requireCurrentUser } from "../middleware/firebaseAuth.js";
 import rateLimit from "express-rate-limit";
-import { generateChallenge, getChallengeRuntimeStatus, submitChallenge } from "../controllers/challengeController.js";
+import { generateChallenge, getChallengeRuntimeStatus, submitChallenge, getSavedChallenge } from "../controllers/challengeController.js";
+import { challengeWorkController } from '../controllers/challengeWorkController.js';
+import { challengeCatalog } from '../data/challengeCatalog.js';
 import { getFirebaseServiceStatus } from "../config/firebase.js";
 import { validateStartupEnv } from "../config/envValidation.js";
 
@@ -19,10 +21,24 @@ const heavyLimiter = rateLimit({
   message: { error: "Rate limit exceeded for heavy operations." }
 });
 
-export function createApiRoutes({ roomController, roomProjectController, roomRepository, executionController, aiController, emotionController, profileController, compilerController, adminController, problemController, feedbackController, notificationController, directMessageController }) {
+export function createApiRoutes({ roomController, warBattleController, relayController, roomProjectController, roomRepository, executionController, aiController, emotionController, profileController, compilerController, adminController, problemController, feedbackController, notificationController, directMessageController }) {
   const router = Router();
   
-  // Apply standard rate limit to all routes
+  // Team members may share a network. Room recovery must not consume the shared
+  // IP quota used by background/profile requests while everyone enters battle.
+  if (warBattleController) {
+    const warReadLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser.uid });
+    router.get('/rooms/:id/war', firebaseAuth, warReadLimiter, roomController.get);
+    router.get('/rooms/:id/war/history', firebaseAuth, warReadLimiter, warBattleController.history);
+  }
+  // Apply standard rate limit to other routes
+  if (relayController) {
+    const relayLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser.uid });
+    const runLimiter = rateLimit({ windowMs: 60000, max: 10, keyGenerator: req => req.firebaseUser.uid });
+    router.get('/rooms/:id/relay', firebaseAuth, relayLimiter, relayController.workspace);
+    router.post('/rooms/:id/relay', firebaseAuth, relayLimiter, relayController.action);
+    router.post('/rooms/:id/relay/run', firebaseAuth, runLimiter, relayController.run);
+  }
   router.use(apiLimiter);
 
   router.get("/health", (_request, response) => {
@@ -50,6 +66,8 @@ export function createApiRoutes({ roomController, roomProjectController, roomRep
     router.post("/rooms/:id/project/end", firebaseAuth, roomProjectController.end);
   }
   router.get("/rooms/:id", optionalFirebaseAuth, roomController.get);
+  if (warBattleController) router.post('/rooms/:id/war/submit', firebaseAuth, heavyLimiter, warBattleController.submit);
+
   
   // Public problem routes
   router.get("/problems", problemController.list);
@@ -95,8 +113,14 @@ export function createApiRoutes({ roomController, roomProjectController, roomRep
   router.post("/emotions/init", emotionController.initEmotions);
 
   // Challenge Routes
-  router.post("/challenge/generate", heavyLimiter, generateChallenge);
-  router.post("/challenge/submit", heavyLimiter, submitChallenge);
+  router.get('/challenge/catalog', (_req, res) => res.json({ items: challengeCatalog }));
+  router.post("/challenge/generate", firebaseAuth, heavyLimiter, generateChallenge);
+  router.post("/challenge/submit", firebaseAuth, heavyLimiter, submitChallenge);
+  router.get('/challenge/work', firebaseAuth, challengeWorkController.list);
+  router.get('/challenge/work/:id', firebaseAuth, challengeWorkController.get);
+  router.get('/challenge/attempts/:id', firebaseAuth, challengeWorkController.attempt);
+  router.patch('/challenge/work/:id', firebaseAuth, challengeWorkController.save);
+  router.get('/challenge/targets/:id', firebaseAuth, heavyLimiter, getSavedChallenge);
 
   // Feedback routes
   router.post("/feedback", feedbackController.submit);
