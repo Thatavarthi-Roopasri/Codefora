@@ -5,12 +5,12 @@ import { isLocalIdentityAllowed, saveCodeforaSession } from "../lib/session";
 import { subscribeProfileSync } from "../lib/profileSync";
 
 function getManualUser() {
-  if (!isLocalIdentityAllowed()) return null;
-
   try {
     const uid = localStorage.getItem("codefora_user_id");
     const displayName = localStorage.getItem("codefora_username");
     if (!uid || !displayName) return null;
+    // Guest identities are browser-only and never receive an API token.
+    if (!isLocalIdentityAllowed() && !uid.startsWith("guest-")) return null;
     return {
       uid,
       displayName,
