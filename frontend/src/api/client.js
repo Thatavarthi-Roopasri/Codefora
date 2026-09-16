@@ -80,6 +80,12 @@ export const api = {
     return request(url);
   },
   getRoomByInviteCode: (code) => request(`/api/rooms/invite/${encodeURIComponent(code)}`),
+  getWarRoom: (id, inviteCode, hostToken) => {
+    const params = new URLSearchParams();
+    if (inviteCode) params.set('inviteCode', inviteCode);
+    if (hostToken) params.set('hostToken', hostToken);
+    return request(`/api/rooms/${encodeURIComponent(id)}/war${params.size ? `?${params}` : ''}`);
+  },
   createRoom: (body) => request("/api/rooms", { method: "POST", body: JSON.stringify(body) }),
   saveRoomProject: (roomId, project) => request(`/api/rooms/${encodeURIComponent(roomId)}/project`, { method: "POST", body: JSON.stringify(project) }),
   resumeRoomProject: (roomId, workId) => request(`/api/rooms/${encodeURIComponent(roomId)}/project/resume`, { method: "POST", body: JSON.stringify({ workId }) }),
@@ -99,7 +105,8 @@ export const api = {
   deleteWork: (userId, workId) => request(`/api/profiles/${encodeURIComponent(userId)}/works/${encodeURIComponent(workId)}`, { method: "DELETE" }),
   resumeSavedWorkRoom: (userId, workId) => request(`/api/profiles/${encodeURIComponent(userId)}/works/${encodeURIComponent(workId)}/resume-room`, { method: "POST", body: JSON.stringify({}) }),
   solveProblem: (userId, problemId) => request(`/api/profiles/${encodeURIComponent(userId)}/solve`, { method: "POST", body: JSON.stringify({ problemId }) }),
-  removeFriend: (userId, friendId) => request(`/api/profiles/${encodeURIComponent(userId)}/friends/${encodeURIComponent(friendId)}`, { method: "DELETE" })
+  removeFriend: (userId, friendId) => request(`/api/profiles/${encodeURIComponent(userId)}/friends/${encodeURIComponent(friendId)}`, { method: "DELETE" }),
+  sendRoomInvite: (body) => request("/api/notifications/invite", { method: "POST", body: JSON.stringify(body) })
   ,sendDirectMessage: (body) => request("/api/messages", { method: "POST", body: JSON.stringify(body) })
   ,getDirectMessage: (messageId) => request(`/api/messages/${encodeURIComponent(messageId)}`)
   ,markDirectMessageSeen: (messageId) => request(`/api/messages/${encodeURIComponent(messageId)}/seen`, { method: "POST", body: JSON.stringify({}) })
