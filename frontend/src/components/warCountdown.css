@@ -1,0 +1,109 @@
+.war-launch-overlay {
+  --launch-rgb: 255, 126, 24;
+  --launch-bright: #ffe1a0;
+  --launch-color: #ff861c;
+  --launch-dark: #943403;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 14% 95%, #007aff16, transparent 48%), radial-gradient(ellipse at 90% 95%, #ff79001c, transparent 48%), #01050bd9;
+  backdrop-filter: blur(3px);
+  color: #f8fafc;
+}
+
+.war-launch-overlay.war-launch-loop,
+:root[data-community="loop"] .war-launch-overlay.war-launch-neutral {
+  --launch-rgb: 25, 174, 255;
+  --launch-bright: #c6f2ff;
+  --launch-color: #21b9ff;
+  --launch-dark: #074a91;
+}
+
+.war-launch-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.war-launch-stage { width: min(940px, 94vw); display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 500px) minmax(90px, 1fr); gap: clamp(8px, 2vw, 32px); align-items: center; }
+.war-launch-core { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; perspective: 900px; isolation: isolate; }
+.war-launch-halo { position: absolute; inset: 3%; border-radius: 50%; background: radial-gradient(circle, rgba(var(--launch-rgb), .22), rgba(var(--launch-rgb), .04) 55%, transparent 72%); box-shadow: 0 0 100px rgba(var(--launch-rgb), .08); }
+.war-launch-orbit { position: absolute; border-radius: 50%; pointer-events: none; }
+.war-launch-orbit-outer { inset: -5%; border: 1px solid rgba(var(--launch-rgb), .18); border-left-color: rgba(var(--launch-rgb), .7); border-right-color: rgba(var(--launch-rgb), .4); transform: rotate(-25deg) rotateX(14deg); box-shadow: inset 0 0 26px rgba(var(--launch-rgb), .04); }
+.war-launch-orbit-inner { inset: 13%; border: 2px dotted rgba(var(--launch-rgb), .23); border-bottom-color: transparent; }
+.war-launch-progress { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; transform: rotate(-90deg); }
+.war-launch-track { stroke: rgba(var(--launch-rgb), .12); stroke-width: 1; }
+.war-launch-arc { stroke: var(--launch-color); stroke-width: 1.5; stroke-linecap: round; filter: drop-shadow(0 0 5px var(--launch-color)); }
+.war-launch-number { position: relative; display: grid; place-items: center; margin-top: -13%; transform-style: preserve-3d; }
+.war-launch-digit {
+  position: relative;
+  display: block;
+  font-family: 'Arial Black', 'Impact', sans-serif;
+  font-size: clamp(100px, 20vw, 258px);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: -.04em;
+  color: var(--launch-color);
+  -webkit-text-stroke: 1px var(--launch-bright);
+  text-shadow: 1px 1px 0 var(--launch-dark), 2px 2px 0 var(--launch-dark), 3px 3px 0 var(--launch-dark), 4px 4px 0 var(--launch-dark), 5px 5px 0 var(--launch-dark), 6px 6px 0 var(--launch-dark), 7px 7px 0 var(--launch-dark), 8px 8px 0 var(--launch-dark), 9px 9px 0 var(--launch-dark), 10px 10px 0 var(--launch-dark), 0 0 28px rgba(var(--launch-rgb), .6), 0 18px 60px rgba(var(--launch-rgb), .36), 12px 24px 26px #000;
+  transform: rotateX(7deg) rotateY(-9deg) translateZ(28px);
+}
+.war-launch-digit::after { content: attr(data-text); position: absolute; inset: 0; background: linear-gradient(155deg, var(--launch-bright) -15%, var(--launch-color) 45%, var(--launch-dark) 115%); background-clip: text; -webkit-background-clip: text; color: transparent; text-shadow: none; -webkit-text-stroke: .75px rgba(var(--launch-rgb), .9); }
+.war-launch-caption { position: absolute; bottom: 14%; width: 100%; text-align: center; }
+.war-launch-caption strong { display: inline-flex; align-items: center; justify-content: center; gap: 10px; font: 800 clamp(12px, 1.7vw, 21px)/1.4 'Courier New', monospace; letter-spacing: .09em; text-shadow: 0 2px 16px #000; }
+.war-launch-caption p { margin: 8px 0 0; color: #afbbc9; font: 400 clamp(11px, 1.2vw, 15px)/1.4 'Courier New', monospace; }
+.war-launch-dots { display: inline-flex; gap: 6px; }
+.war-launch-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--launch-color); box-shadow: 0 0 8px var(--launch-color); }
+.war-launch-team { min-width: 0; text-align: center; --team-color: #21b9ff; --team-rgb: 25, 174, 255; }
+.war-launch-team.war-launch-sider { --team-color: #ff861c; --team-rgb: 255, 126, 24; }
+.war-launch-team-name { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; color: var(--team-color); font-size: 12px; font-weight: 800; letter-spacing: .04em; margin-bottom: 20px; }
+.war-launch-roster { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.war-launch-player { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; }
+.war-launch-avatar { display: grid; place-items: center; width: clamp(38px, 5vw, 64px); aspect-ratio: 1; border: 1px solid var(--team-color); border-radius: 50%; background: radial-gradient(circle at 40% 30%, rgba(var(--team-rgb), .3), #030913 75%); box-shadow: 0 0 18px rgba(var(--team-rgb), .18), inset 0 0 10px rgba(var(--team-rgb), .12); color: var(--team-color); font: 800 clamp(16px, 2vw, 24px)/1 sans-serif; }
+.war-launch-avatar img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.war-launch-player.is-empty .war-launch-avatar { border-style: dashed; opacity: .45; box-shadow: none; }
+.war-launch-player-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c5cdda; font-size: 11px; }
+.war-launch-matchup { display: flex; align-items: center; gap: clamp(16px, 4vw, 44px); margin-top: 45px; font: 800 clamp(10px, 1.2vw, 13px)/1.4 'Courier New', monospace; letter-spacing: .13em; }
+.war-launch-matchup span:first-child { color: #21b9ff; }
+.war-launch-matchup span:last-child { color: #ff861c; }
+.war-launch-matchup b { color: #8895a8; font-size: 11px; }
+.war-launch-embers { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.war-launch-embers i { position: absolute; left: var(--spark-x); bottom: 0; width: 2px; height: 7px; border-radius: 50%; background: #21b9ff; box-shadow: 0 0 10px #21b9ff; opacity: 0; }
+.war-launch-embers i:nth-child(even) { background: #ff861c; box-shadow: 0 0 10px #ff861c; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .war-launch-orbit-outer { animation: war-launch-orbit 12s linear infinite; }
+  .war-launch-orbit-inner { animation: war-launch-orbit 20s linear reverse infinite; }
+  .war-launch-number { animation: war-launch-impact 1000ms cubic-bezier(.18,.7,.25,1) both; animation-delay: var(--beat-delay); }
+  .war-launch-embers i { animation: war-launch-spark 4s linear infinite; animation-delay: var(--spark-delay); }
+  .war-launch-dots i { animation: war-launch-dot 1s ease-in-out infinite alternate; }
+  .war-launch-dots i:nth-child(2) { animation-delay: .2s; }
+  .war-launch-dots i:nth-child(3) { animation-delay: .4s; }
+}
+@keyframes war-launch-impact { 0% { transform: translateZ(110px) scale(1.32) rotateY(-12deg); opacity: .35; } 24% { transform: translateZ(0) scale(1) rotateY(0); opacity: 1; } 78% { transform: scale(1); opacity: 1; } 100% { transform: scale(.96); opacity: .85; } }
+@keyframes war-launch-orbit { to { transform: rotate(360deg); } }
+@keyframes war-launch-spark { 10% { opacity: .65; } 90% { opacity: 0; } to { transform: translate(var(--spark-drift), -55vh) rotate(30deg); opacity: 0; } }
+@keyframes war-launch-dot { to { opacity: .3; } }
+
+@media (max-width: 600px) {
+  .war-launch-stage { width: 98vw; grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 4px; }
+  .war-launch-team-name { font-size: 9px; gap: 4px; margin-bottom: 12px; }
+  .war-launch-roster { gap: 10px; }
+  .war-launch-player-name { font-size: 9px; max-width: 54px; }
+  .war-launch-digit { font-size: clamp(84px, 29vw, 164px); }
+  .war-launch-caption strong { font-size: clamp(9px, 2.5vw, 14px); letter-spacing: .03em; gap: 5px; }
+  .war-launch-caption p { font-size: 10px; margin-top: 5px; }
+  .war-launch-dots { gap: 3px; }
+  .war-launch-dots i { width: 3px; height: 3px; }
+  .war-launch-matchup { margin-top: 30px; }
+}
+@media (max-height: 560px) and (min-width: 601px) {
+  .war-launch-stage { max-width: 650px; grid-template-columns: 90px minmax(0, 340px) 90px; }
+  .war-launch-digit { font-size: 170px; }
+  .war-launch-roster { flex-direction: row; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .war-launch-player { width: 40px; }
+  .war-launch-avatar { width: 36px; }
+  .war-launch-player-name { display: none; }
+  .war-launch-matchup { margin-top: 20px; }
+}

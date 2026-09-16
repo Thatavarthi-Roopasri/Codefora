@@ -20,6 +20,8 @@ const ProblemsPage = lazy(() => import("./pages/ProblemsPage").then((module) => 
 const ChallengesPage = lazy(() => import("./pages/ChallengesPage").then((module) => ({ default: module.ChallengesPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then((module) => ({ default: module.ProfilePage })));
 const RoomsPage = lazy(() => import("./pages/RoomsPage").then((module) => ({ default: module.RoomsPage })));
+const WarArenaPage = lazy(() => import("./pages/WarArenaPage").then((module) => ({ default: module.WarArenaPage })));
+const CodeWarBattlePage = lazy(() => import("./pages/CodeWarBattlePage").then((module) => ({ default: module.CodeWarBattlePage })));
 const RoomPage = lazy(() => import("./pages/RoomPage").then((module) => ({ default: module.RoomPage })));
 const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
 const PlaygroundPage = lazy(() => import("./pages/PlaygroundPage").then((module) => ({ default: module.PlaygroundPage })));
@@ -117,6 +119,11 @@ const router = createBrowserRouter([
       { path: "problems", element: <ProblemsPage /> },
       { path: "problems/:id/dry-run/:dryRunId", element: <DryRunPage /> },
       { path: "challenges", element: <ChallengesPage /> },
+      { path: "war-arena", element: <WarArenaPage mode="create" /> },
+      { path: "war-arena/create", element: <WarArenaPage mode="create" /> },
+      { path: "war-arena/room/:roomCode", element: <WarArenaPage mode="room" /> },
+      { path: "war-arena/battle/:roomCode", element: <CodeWarBattlePage /> },
+      { path: "war-arena/results/:roomCode", element: <CodeWarBattlePage /> },
       { path: "admin", element: <AdminDashboardPage /> },
       { path: "profile", element: <ProfilePage /> },
       { path: "profile/:userId", element: <ProfilePage /> },
