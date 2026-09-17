@@ -47,6 +47,20 @@ export const useAuth = () => {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const syncBrowserSession = () => {
+      // Firebase remains authoritative for signed-in accounts. Browser sessions
+      // are only used when there is no Firebase user, including guests.
+      if (!auth?.currentUser) {
+        setUser(getManualUser());
+        setLoading(false);
+      }
+    };
+
+    window.addEventListener("codefora:session-changed", syncBrowserSession);
+    return () => window.removeEventListener("codefora:session-changed", syncBrowserSession);
+  }, []);
+
   // This is only a client-side navigation/display hint. Admin API access is enforced by backend token checks.
   const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user?.email);
 

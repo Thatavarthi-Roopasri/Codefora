@@ -16,26 +16,41 @@ const CODEFORA_SESSION_PREFIXES = [
 
 export function clearCodeforaSession() {
   if (typeof window === "undefined") return;
+  let changed = false;
 
   for (const key of CODEFORA_SESSION_KEYS) {
-    localStorage.removeItem(key);
+    if (localStorage.getItem(key) !== null) {
+      localStorage.removeItem(key);
+      changed = true;
+    }
   }
 
   for (let index = localStorage.length - 1; index >= 0; index -= 1) {
     const key = localStorage.key(index);
     if (key && CODEFORA_SESSION_PREFIXES.some((prefix) => key.startsWith(prefix))) {
       localStorage.removeItem(key);
+      changed = true;
     }
   }
+
+  if (changed) window.dispatchEvent(new Event("codefora:session-changed"));
 }
 
 export function saveCodeforaSession({ uid, displayName, community, role }) {
   if (typeof window === "undefined") return;
+  let changed = false;
+  const save = (key, value) => {
+    if (value && localStorage.getItem(key) !== value) {
+      localStorage.setItem(key, value);
+      changed = true;
+    }
+  };
 
-  if (uid) localStorage.setItem("codefora_user_id", uid);
-  if (displayName) localStorage.setItem("codefora_username", displayName);
-  if (community) localStorage.setItem("codefora_community", community);
-  if (role) localStorage.setItem("codefora_role", role);
+  save("codefora_user_id", uid);
+  save("codefora_username", displayName);
+  save("codefora_community", community);
+  save("codefora_role", role);
+  if (changed) window.dispatchEvent(new Event("codefora:session-changed"));
 }
 
 export function isLocalIdentityAllowed() {

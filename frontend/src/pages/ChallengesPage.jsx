@@ -27,6 +27,7 @@ import { useAuth } from "../hooks/useAuth";
 import { api, getProfile, saveProfile } from "../api/client";
 import { saveHostToken, saveInviteCode, saveUsername } from "../lib/navigation";
 import { isGuestUser } from "../lib/userAccess";
+import { LoginRequiredModal } from "../components/LoginRequiredModal";
 
 function capitalize(value) {
   return String(value || "").charAt(0).toUpperCase() + String(value || "").slice(1);
@@ -45,6 +46,8 @@ export function ChallengesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState("grid");
   const [activeInfoPanel, setActiveInfoPanel] = useState(null);
+  const [showLoginRequired, setShowLoginRequired] = useState(false);
+  const [loginRequiredMessage, setLoginRequiredMessage] = useState("Please login to create a challenge.");
   useEffect(() => {
     if (!user?.uid || isGuestUser(user)) {
       setFavoriteModes([]);
@@ -136,15 +139,15 @@ export function ChallengesPage() {
       }
       : null;
 
-  const requireAccount = () => {
+  const requireAccount = (message) => {
     if (!isGuestUser(user)) return true;
-    const returnTo = '/challenges';
-    navigate(`/?returnTo=${encodeURIComponent(returnTo)}`, { state: { returnTo } });
+    setLoginRequiredMessage(message || "Please login to create a challenge.");
+    setShowLoginRequired(true);
     return false;
   };
 
   const startChallenge = async () => {
-    if (!requireAccount()) return;
+    if (!requireAccount("Please login to start a frontend challenge.")) return;
 
     const displayName = user.displayName || user.username || user.email?.split("@")[0] || "Developer";
     const userId = user.uid || user.id || null;
@@ -194,7 +197,7 @@ export function ChallengesPage() {
   };
 
   const startRelay = async () => {
-    if (!requireAccount()) return;
+    if (!requireAccount("Please login to create a Relay with your team.")) return;
     const displayName = user.displayName || user.username || 'Developer';
     setIsStartingRelay(true); setError(null);
     try {
@@ -432,7 +435,9 @@ export function ChallengesPage() {
             </div>
 
             <div className="challenge-card-actions">
-              <button className="challenge-primary-action" onClick={() => navigate("/war-arena/create")}>
+              <button className="challenge-primary-action" onClick={() => {
+                if (requireAccount("Please login to create a Codewars battle.")) navigate("/war-arena/create");
+              }}>
                 <Play size={15} fill="currentColor" /> Start Challenge
               </button>
               <button type="button" className="challenge-link-action" onClick={() => setActiveInfoPanel("codewars")}>
@@ -445,6 +450,11 @@ export function ChallengesPage() {
         </div>
       </div>
       <Footer />
+      <LoginRequiredModal
+        open={showLoginRequired}
+        onClose={() => setShowLoginRequired(false)}
+        message={loginRequiredMessage}
+      />
     </main>
   );
 }
