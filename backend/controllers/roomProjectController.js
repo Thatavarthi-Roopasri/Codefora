@@ -92,6 +92,11 @@ function assertProjectOwner(room, userId) {
 export function createRoomProjectController({ roomRepository, roomService = null, profileController, collabDocs = null }) {
   async function findOwnedRoom(request) {
     const room = await roomRepository.fetchById(request.params.id);
+    if (room?.relay) {
+      const error = new Error('Relay rooms cannot be saved as standard room projects.');
+      error.statusCode = 409;
+      throw error;
+    }
     assertProjectOwner(room, request.firebaseUser?.uid);
     return room;
   }

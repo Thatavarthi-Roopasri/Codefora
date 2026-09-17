@@ -486,7 +486,7 @@ function analyzeChallengeImage(base64Image) {
 }
 
 // Helper function to render HTML string to a base64 PNG
-async function renderHtmlToImage(html, viewportWidth = CHALLENGE_VIEWPORT_WIDTH, compactSection = false) {
+export async function renderHtmlToImage(html, viewportWidth = CHALLENGE_VIEWPORT_WIDTH, compactSection = false) {
   const browser = await getRendererBrowser();
   const page = await browser.newPage();
   try {

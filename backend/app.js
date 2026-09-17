@@ -19,6 +19,10 @@ import { PistonService } from "./services/pistonService.js";
 import { ProblemJudgeService } from "./services/problemJudgeService.js";
 import { SubmissionService } from "./services/submissionService.js";
 import { AdminAuditService } from "./services/adminAuditService.js";
+import { createRelayController } from "./services/relayService.js";
+import { createWarBattleController } from "./services/warBattleService.js";
+import { renderHtmlToImage } from "./controllers/challengeController.js";
+import { publishWarSnapshot, publishRelaySnapshot } from "./sockets/collaborationSocket.js";
 import { corsOrigin } from "./config/cors.js";
 
 export function createApp({ roomRepository, roomService, profileController, onRoomCreated, collabDocs }) {
@@ -31,7 +35,24 @@ export function createApp({ roomRepository, roomService, profileController, onRo
   const pistonService = new PistonService();
   const submissionService = new SubmissionService();
   const auditService = new AdminAuditService();
-  const compilerController = createCompilerController(pistonService, new ProblemJudgeService(pistonService), submissionService);
+  const problemJudgeService = new ProblemJudgeService(pistonService);
+  const compilerController = createCompilerController(pistonService, problemJudgeService, submissionService);
+  const warBattleController = createWarBattleController({
+    roomRepository,
+    roomService,
+    profileController,
+    judge: problemJudgeService,
+    runner: pistonService,
+    publish: publishWarSnapshot
+  });
+  const relayController = createRelayController({
+    roomRepository,
+    roomService,
+    runner: pistonService,
+    render: renderHtmlToImage,
+    profileController,
+    publish: publishRelaySnapshot
+  });
   const adminController = createAdminController(roomRepository, { submissionService, auditService });
   const problemController = createProblemController();
   const feedbackController = createFeedbackController({ auditService });
@@ -63,6 +84,8 @@ export function createApp({ roomRepository, roomService, profileController, onRo
 
   app.use("/api", createApiRoutes({ 
     roomController, 
+    warBattleController,
+    relayController,
     roomProjectController,
     roomRepository,
     executionController, 
@@ -73,8 +96,8 @@ export function createApp({ roomRepository, roomService, profileController, onRo
     adminController,
     problemController,
     feedbackController,
-    notificationController
-    ,directMessageController
+    notificationController,
+    directMessageController
   }));
 
   app.use((request, response) => {

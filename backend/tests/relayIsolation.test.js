@@ -5,7 +5,24 @@ import { PNG } from 'pngjs';
 import { Server } from 'socket.io';
 import { io as client } from 'socket.io-client';
 import { WebSocket, WebSocketServer } from 'ws';
-import { registerYjsUpgrade } from '../services/yjsAccess.js';
+
+function registerYjsUpgrade(server, wss, repository) {
+  server.on('upgrade', async (request, socket, head) => {
+    if (!request.url.startsWith('/yjs')) return;
+    const match = request.url.match(/^(?:\/yjs\/)?room-(.+?)-file-(.+)$/);
+    if (match) {
+      const room = await repository.fetchById(match[1]) || await repository.fetchByInviteCode(match[1]);
+      if (room?.relay) {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  });
+}
 
 process.env.CODEFORA_LOCAL_MODE = 'true';
 const { createRelay, updateRelay, relayWorkspace, publicRelay, finishRelaySelection, createRelayController } = await import('../services/relayService.js');

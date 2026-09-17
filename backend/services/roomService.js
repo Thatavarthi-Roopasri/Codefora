@@ -1,13 +1,14 @@
 import { defaultFiles } from "../data/defaultFiles.js";
 import { languageFromName, starterCode } from "../utils/files.js";
 import { cryptoId } from "../utils/id.js";
+import { publicRelay, createRelay } from "./relayService.js";
 
 export class RoomService {
   constructor(repository) {
     this.repository = repository;
   }
 
-  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, challengeDifficulty, files, notes, activeFile, readOnly, sourceWorkId, completedAt }) {
+  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, challengeDifficulty, files, notes, activeFile, readOnly, sourceWorkId, completedAt, relayMode }) {
     const trimmedName = name?.trim() || "Untitled Lab";
 
     if (this.repository.findByName(trimmedName) && !sourceWorkId) {
@@ -25,11 +26,13 @@ export class RoomService {
       inviteCode = cryptoId().slice(0, 8).toUpperCase();
     }
 
+    const relay = createRelay(relayMode);
+
     return {
       id,
       name: trimmedName,
       visibility: visibility === "private" ? "private" : "public",
-      files: normalizeRoomFiles(files),
+      files: relay ? [] : normalizeRoomFiles(files),
       messages: [],
       users: [],
       notes: {
@@ -52,6 +55,7 @@ export class RoomService {
       readOnly: Boolean(readOnly),
       sourceWorkId: sourceWorkId || null,
       completedAt: completedAt || null,
+      relay: relay || null,
       createdAt: Date.now()
     };
   }
@@ -93,6 +97,23 @@ export class RoomService {
   }
 
   snapshot(room) {
+    if (room.relay) {
+      return {
+        ...this.publicRoom(room),
+        allowAi: false,
+        allowCopyPaste: false,
+        inviteCode: room.inviteCode,
+        files: [],
+        messages: [],
+        usersList: room.users,
+        notes: { text: "", draws: [] },
+        activeFile: null,
+        timer: { endTime: null, duration: 25 * 60, isRunning: false },
+        history: [],
+        relay: publicRelay(room.relay)
+      };
+    }
+
     return {
       ...this.publicRoom(room),
       allowAi: room.allowAi !== false,
