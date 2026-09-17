@@ -1,4 +1,4 @@
-import { createBrowserRouter, RouterProvider, Outlet } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Outlet, redirect } from "react-router-dom";
 import { lazy, Suspense, useEffect, useState } from "react";
 import "./challenge-improvements.css";
 import { useTheme } from "./hooks/useTheme";
@@ -120,6 +120,7 @@ const router = createBrowserRouter([
       { path: "problems", element: <ProblemsPage /> },
       { path: "problems/:id/dry-run/:dryRunId", element: <DryRunPage /> },
       { path: "relay/:roomId", element: <RelayPage /> },
+      { path: "challenge", loader: () => redirect("/challenges") },
       { path: "challenges", element: <ChallengesPage /> },
       { path: "war-arena", element: <WarArenaPage mode="create" /> },
       { path: "war-arena/create", element: <WarArenaPage mode="create" /> },
@@ -141,7 +142,9 @@ const router = createBrowserRouter([
       { path: "contact", element: <FeedbackPage /> },
       { path: "room/:roomId", element: <RoomPage /> },
       { path: "code/:roomId", element: <RoomPage /> },
-      { path: "code/private/:roomId", element: <RoomPage /> }
+      { path: "code/private/:roomId", element: <RoomPage /> },
+      // Keep stale shared links usable instead of React Router's default 404 screen.
+      { path: "*", loader: () => redirect("/home") }
     ]
   }
 ]);
