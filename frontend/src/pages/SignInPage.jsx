@@ -8,6 +8,7 @@ import { saveUsername } from "../lib/navigation";
 import { DeferredBackgroundVideo } from "../components/DeferredBackgroundVideo";
 import { useAuth } from "../hooks/useAuth";
 import { saveCodeforaSession } from "../lib/session";
+import { isGuestUser } from "../lib/userAccess";
 
 const loadHomeVideo = () => import("../../assets/homevideo.mp4");
 
@@ -37,7 +38,7 @@ export default function SignInPage() {
   }
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !isGuestUser(user)) {
       const isAdmin = ["ganeshvanamala16@gmail.com", "roopasri061216@gmail.com"].includes(user.email);
       navigate(returnTo || (isAdmin ? '/admin' : '/home'), { replace: true });
     }
