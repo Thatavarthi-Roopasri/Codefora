@@ -105,9 +105,25 @@ function LoaderManager({ children }) {
   );
 }
 
+function RouteRecoveryPage() {
+  return (
+    <main className="problems-shell" style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "24px" }}>
+      <section className="glass-panel" style={{ maxWidth: "520px", padding: "32px", textAlign: "center" }}>
+        <h1>Let’s get you back on track</h1>
+        <p>This link is no longer available. You can safely continue from Challenges or Home.</p>
+        <p style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}>
+          <a className="button primary" href="/challenges">Challenges</a>
+          <a className="button secondary" href="/home">Home</a>
+        </p>
+      </section>
+    </main>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: "/",
+    errorElement: <RouteRecoveryPage />,
     element: (
       <LoaderManager>
         <Outlet />
