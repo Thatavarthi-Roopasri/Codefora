@@ -27,14 +27,14 @@ export function createApiRoutes({ roomController, warBattleController, relayCont
   // Team members may share a network. Room recovery must not consume the shared
   // IP quota used by background/profile requests while everyone enters battle.
   if (warBattleController) {
-    const warReadLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser.uid });
-    router.get('/rooms/:id/war', firebaseAuth, warReadLimiter, roomController.get);
-    router.get('/rooms/:id/war/history', firebaseAuth, warReadLimiter, warBattleController.history);
+    const warReadLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser?.uid || req.ip });
+    router.get('/rooms/:id/war', optionalFirebaseAuth, warReadLimiter, roomController.get);
+    router.get('/rooms/:id/war/history', optionalFirebaseAuth, warReadLimiter, warBattleController.history);
   }
   // Apply standard rate limit to other routes
   if (relayController) {
-    const relayLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser.uid });
-    const runLimiter = rateLimit({ windowMs: 60000, max: 10, keyGenerator: req => req.firebaseUser.uid });
+    const relayLimiter = rateLimit({ windowMs: 60000, max: 180, keyGenerator: req => req.firebaseUser?.uid || req.ip });
+    const runLimiter = rateLimit({ windowMs: 60000, max: 10, keyGenerator: req => req.firebaseUser?.uid || req.ip });
     router.get('/rooms/:id/relay', firebaseAuth, relayLimiter, relayController.workspace);
     router.post('/rooms/:id/relay', firebaseAuth, relayLimiter, relayController.action);
     router.post('/rooms/:id/relay/run', firebaseAuth, runLimiter, relayController.run);

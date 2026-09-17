@@ -8,7 +8,7 @@ export class RoomService {
     this.repository = repository;
   }
 
-  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, challengeDifficulty, files, notes, activeFile, readOnly, sourceWorkId, completedAt, relayMode }) {
+  createRoom({ name, username, visibility, userId, problemId, max, isChallenge, targetImage, challengeId, challengeDifficulty, files, notes, activeFile, readOnly, sourceWorkId, completedAt, relayMode, warArena }) {
     const trimmedName = name?.trim() || "Untitled Lab";
 
     if (this.repository.findByName(trimmedName) && !sourceWorkId) {
@@ -56,6 +56,7 @@ export class RoomService {
       sourceWorkId: sourceWorkId || null,
       completedAt: completedAt || null,
       relay: relay || null,
+      warArena: warArena || null,
       createdAt: Date.now()
     };
   }
@@ -93,6 +94,7 @@ export class RoomService {
       canJoinWithoutCode: isOwner,
       sourceWorkId: room.sourceWorkId || null,
       project,
+      warArena: room.warArena || null,
     };
   }
 
@@ -125,7 +127,8 @@ export class RoomService {
       notes: room.notes || { text: "", draws: [] },
       activeFile: room.activeFile || null,
       timer: room.timer || { endTime: null, duration: 25 * 60, isRunning: false },
-      history: (room.history || []).slice(-10) // Only send recent 10 major snapshots
+      history: (room.history || []).slice(-10), // Only send recent 10 major snapshots
+      warArena: room.warArena || null
     };
   }
 
