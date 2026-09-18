@@ -17,6 +17,7 @@ import {
   Users
 } from "lucide-react";
 import { api } from "../api/client";
+import { auth } from "../lib/firebase";
 import { useAuth } from "../hooks/useAuth";
 import { copyToClipboard } from "../lib/clipboard";
 import { getHostToken, getInviteCode, saveInviteCode, saveUsername } from "../lib/navigation";
@@ -200,6 +201,14 @@ export function CodeWarBattlePage() {
         api.request(`/api/rooms/${payload.id}/war/history`).then(data => { if (active) setAttempts(data.attempts); }).catch(error => { if (active) setToast(error.message); });
         const displayName = user?.displayName || user?.username || user?.email?.split("@")[0] || localStorage.getItem("codefora_username") || "Developer";
         saveUsername(displayName);
+        if (auth?.currentUser) {
+          try {
+            const token = await auth.currentUser.getIdToken(false);
+            socket.auth = { token };
+          } catch {
+            // ignore
+          }
+        }
         socket.connect();
         const joinData = {
           roomId: payload.id,

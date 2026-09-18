@@ -24,6 +24,7 @@ import {
   UserPlus
 } from "lucide-react";
 import { api } from "../api/client";
+import { auth } from "../lib/firebase";
 import { Navbar } from "../components/Navbar";
 import { useAuth } from "../hooks/useAuth";
 import { useServerClock } from "../hooks/useServerClock";
@@ -228,6 +229,14 @@ export function WarArenaPage({ mode = "create" }) {
           sessionId: getSessionId(payload.id)
         };
         saveUsername(displayName);
+        if (auth?.currentUser) {
+          try {
+            const token = await auth.currentUser.getIdToken(false);
+            socket.auth = { token };
+          } catch {
+            // ignore
+          }
+        }
         socket.connect();
         joinLobby = () => socket.emit("room:join", joinData);
         socket.on("connect", joinLobby);

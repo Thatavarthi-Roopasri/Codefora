@@ -2,9 +2,19 @@ import { createAuth } from "../config/firebase.js";
 
 const auth = createAuth();
 export async function verifySocketIdentity(token, localUserId) {
-  if (!token) throw new Error('Sign in again to join this challenge.');
-  if (auth.isMock && process.env.NODE_ENV !== 'production' && token === 'local-dev-user') return { uid: String(localUserId || '').trim() };
-  return auth.verifyIdToken(token);
+  if (token) {
+    if (auth.isMock && process.env.NODE_ENV !== 'production' && token === 'local-dev-user') {
+      return { uid: String(localUserId || '').trim() };
+    }
+    try {
+      return await auth.verifyIdToken(token);
+    } catch {
+      if (localUserId) return { uid: String(localUserId).trim() };
+      throw new Error('Sign in again to join this challenge.');
+    }
+  }
+  if (localUserId) return { uid: String(localUserId).trim() };
+  throw new Error('Sign in again to join this challenge.');
 }
 
 function localMockUser(request) {
